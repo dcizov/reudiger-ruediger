@@ -2,6 +2,7 @@ import type { InteractionReplyOptions, MessagePayload } from "discord.js";
 import { Client, Events, GatewayIntentBits } from "discord.js";
 import { commands } from "./commands";
 import { config } from "./config";
+import { restartDealScheduler } from "./services/schedulerService";
 
 const client = new Client({
   intents: [
@@ -13,6 +14,8 @@ const client = new Client({
 
 client.once(Events.ClientReady, (readyClient) => {
   console.log(`✅ Discord bot is ready! Logged in as ${readyClient.user.tag}`);
+  // Start the scheduler initially
+  void restartDealScheduler(client);
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
@@ -23,6 +26,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
   try {
     await command.execute(interaction);
+
+    // If the setup command was run, restart the scheduler
+    if (interaction.commandName === "setup") {
+      await restartDealScheduler(client);
+    }
   } catch (error) {
     console.error(`Error executing command ${interaction.commandName}:`, error);
 

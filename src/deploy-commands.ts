@@ -12,9 +12,13 @@ async function deployCommands() {
   try {
     console.log("🚀 Started refreshing application (/) commands...");
 
-    await rest.put(Routes.applicationCommands(config.DISCORD_CLIENT_ID), {
-      body: commandsData,
-    });
+    await rest.put(
+      Routes.applicationGuildCommands(
+        config.DISCORD_CLIENT_ID,
+        config.DISCORD_GUILD_ID
+      ),
+      { body: commandsData }
+    );
 
     console.log("✅ Successfully reloaded application (/) commands!");
   } catch (error) {
