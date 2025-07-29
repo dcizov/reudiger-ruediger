@@ -1,0 +1,11 @@
+services:
+  discord-bot:
+    build: .
+    container_name: discord-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./:/app
+      - /app/node_modules
+    command: ["npm", "run", "dev"] # or "dev" for ts-node
