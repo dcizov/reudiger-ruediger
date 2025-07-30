@@ -15,6 +15,10 @@ export interface PostedDeal {
   imageUrl: string | null;
   url: string | null;
   postedAt: Date | null;
+  postedPrice?: number | null;
+  lowestEver?: boolean;
+  historicalLow?: number | null;
+  expiresAt?: Date | null;
 }
 
 export async function getPostedDeals(): Promise<PostedDeal[]> {

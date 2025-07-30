@@ -6,7 +6,11 @@
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
     "build": "tsup src/index.ts --minify",
-    "lint": "eslint src --ext .ts --fix",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio",
+    "lint": "eslint . --fix",
     "format": "prettier --write \"src/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\"",
     "typecheck": "tsc --noEmit",
@@ -26,11 +30,12 @@
   "devDependencies": {
     "@commitlint/cli": "^19.6.1",
     "@commitlint/config-conventional": "^19.6.0",
+    "@eslint/js": "^9.32.0",
     "@types/node": "^20.11.0",
     "@types/node-cron": "^3.0.11",
     "@types/pg": "^8.15.5",
-    "@typescript-eslint/eslint-plugin": "^6.19.0",
-    "@typescript-eslint/parser": "^6.19.0",
+    "@typescript-eslint/eslint-plugin": "^6.21.0",
+    "@typescript-eslint/parser": "^6.21.0",
     "drizzle-kit": "^0.31.4",
     "eslint": "^8.56.0",
     "eslint-config-prettier": "^9.1.0",
@@ -43,7 +48,7 @@
   },
   "packageManager": "npm@10.7.0",
   "lint-staged": {
-    "src/**/*.{js,ts,tsx}": [
+    "src/**/*.{js,ts}": [
       "npm run lint",
       "npm run format"
     ],

@@ -1,6 +1,6 @@
+import { eq } from "drizzle-orm";
 import { db } from "../db/index";
 import { botConfig } from "../db/schema";
-//import { eq } from "drizzle-orm";
 
 export interface BotConfig {
   dealsChannelId: string;
@@ -39,4 +39,18 @@ export async function setDealsChannelId(channelId: string): Promise<void> {
 
 export async function setSchedule(schedule: string): Promise<void> {
   await setConfigValue("schedule", schedule);
+}
+
+export async function setLogChannelId(channelId: string) {
+  await db
+    .insert(botConfig)
+    .values({ key: "logChannelId", value: channelId })
+    .onConflictDoUpdate({ target: botConfig.key, set: { value: channelId } });
+}
+
+export async function getLogChannelId(): Promise<string | null> {
+  const row = await db.query.botConfig.findFirst({
+    where: eq(botConfig.key, "logChannelId"),
+  });
+  return row?.value || null;
 }

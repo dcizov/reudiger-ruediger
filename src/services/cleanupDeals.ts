@@ -7,12 +7,7 @@ import {
   type TextChannel,
 } from "discord.js";
 import { getBotConfig } from "../utils/botConfig";
-import { getDeals, type CheapSharkDeal } from "../utils/cheapshark";
-import {
-  getPostedDeals,
-  removePostedDeal,
-  type PostedDeal,
-} from "../utils/postedDeals";
+import { getPostedDeals, removePostedDeal } from "../utils/postedDeals";
 
 function isSendableChannel(
   channel: Channel | null
@@ -24,55 +19,35 @@ function isSendableChannel(
   return (
     !!channel &&
     "send" in channel &&
-    typeof (
-      channel as
-        | TextChannel
-        | NewsChannel
-        | PublicThreadChannel
-        | PrivateThreadChannel
-    ).send === "function"
+    typeof (channel as any).send === "function" &&
+    "messages" in channel &&
+    typeof (channel as any).messages?.fetch === "function"
   );
 }
 
 export async function cleanupExpiredDeals(client: Client): Promise<number> {
   const config = await getBotConfig();
-  if (!config.dealsChannelId) return 0;
+  const postedDeals = await getPostedDeals();
+  const now = new Date();
 
-  try {
-    const currentDeals: CheapSharkDeal[] = await getDeals(100);
-    const currentDealIDs = new Set(currentDeals.map((d) => d.dealID));
-    const postedDealsList: PostedDeal[] = await getPostedDeals();
+  const expired = postedDeals.filter(
+    (deal) => deal.expiresAt && deal.expiresAt < now
+  );
+  if (!expired.length) return 0;
 
-    const channel = await client.channels.fetch(config.dealsChannelId);
-    if (!channel || !isSendableChannel(channel)) return 0;
+  const channel = await client.channels.fetch(config.dealsChannelId ?? "");
+  if (!isSendableChannel(channel)) return 0;
 
-    let removedCount = 0;
+  let removed = 0;
 
-    for (const posted of postedDealsList) {
-      if (!currentDealIDs.has(posted.dealId)) {
-        let messageDeleted = false;
-        try {
-          const message = await channel.messages.fetch(posted.messageId);
-          await message.delete();
-          messageDeleted = true;
-        } catch (err) {
-          // Message might already be deleted or bot lacks permissions
-          console.warn(
-            `[cleanup] Could not delete message ${posted.messageId} for deal ${posted.dealId}:`,
-            err
-          );
-        }
-        // Always remove from the database, even if message deletion failed
-        await removePostedDeal(posted.dealId);
-        removedCount++;
-        console.log(
-          `[cleanup] Removed deal ${posted.dealId} from DB${messageDeleted ? " and Discord" : ""}`
-        );
-      }
-    }
-    return removedCount;
-  } catch (err) {
-    console.error("Error during cleanup:", err);
-    return 0;
+  for (const deal of expired) {
+    try {
+      const msg = await channel.messages.fetch(deal.messageId);
+      await msg.delete();
+    } catch {}
+    await removePostedDeal(deal.dealId);
+    removed++;
   }
+
+  return removed;
 }

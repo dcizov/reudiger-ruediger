@@ -1,39 +1,44 @@
-// eslint.config.js
-import { FlatCompat } from "@eslint/eslintrc";
-import tseslint from "typescript-eslint";
+import js from '@eslint/js';
+import tseslint from '@typescript-eslint/eslint-plugin';
+import parser from '@typescript-eslint/parser';
 // @ts-ignore
-import drizzle from "eslint-plugin-drizzle";
+import drizzle from 'eslint-plugin-drizzle';
 
-const compat = new FlatCompat({
-  baseDirectory: import.meta.dirname,
-});
-
-export default tseslint.config(
+export default [
+  js.configs.recommended,
   {
-    ignores: ["node_modules", "dist", ".next"],
-  },
-  ...compat.extends("next/core-web-vitals"),
-  {
-    files: ["**/*.ts", "**/*.tsx"],
-    plugins: { drizzle },
-    extends: [
-      ...tseslint.configs.recommended,
-      ...tseslint.configs.recommendedTypeChecked,
-      ...tseslint.configs.stylisticTypeChecked,
-    ],
+    files: ['src/**/*.ts', 'src/**/*.tsx'],
+    languageOptions: {
+      parser,
+      parserOptions: {
+        project: './tsconfig.json',
+      },
+      globals: {
+        console: 'readonly',
+        process: 'readonly',
+        fetch: 'readonly',
+      },
+    },
+    plugins: {
+      '@typescript-eslint': tseslint,
+      drizzle,
+    },
     rules: {
-      "@typescript-eslint/no-unused-vars": [
-        "warn",
-        { argsIgnorePattern: "^_" },
+      ...tseslint.configs.recommended.rules,
+      ...tseslint.configs['recommended-type-checked'].rules,
+      ...tseslint.configs['stylistic-type-checked'].rules,
+      '@typescript-eslint/no-unused-vars': [
+        'warn',
+        { argsIgnorePattern: '^_' },
       ],
-      "drizzle/enforce-delete-with-where": [
-        "error",
-        { drizzleObjectName: ["db", "ctx.db"] },
+      'drizzle/enforce-delete-with-where': [
+        'error',
+        { drizzleObjectName: ['db', 'ctx.db'] },
       ],
-      "drizzle/enforce-update-with-where": [
-        "error",
-        { drizzleObjectName: ["db", "ctx.db"] },
+      'drizzle/enforce-update-with-where': [
+        'error',
+        { drizzleObjectName: ['db', 'ctx.db'] },
       ],
     },
-  }
-);
+  },
+];

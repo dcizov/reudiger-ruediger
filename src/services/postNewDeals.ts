@@ -1,60 +1,22 @@
 import {
   EmbedBuilder,
-  type Client,
   type Channel,
-  type TextChannel,
+  type Client,
   type NewsChannel,
-  type PublicThreadChannel,
   type PrivateThreadChannel,
+  type PublicThreadChannel,
+  type TextChannel,
 } from "discord.js";
-import { getDeals, type CheapSharkDeal } from "../utils/cheapshark";
-import { getBotConfig } from "../utils/botConfig";
-import {
-  getItadGameId,
-  getItadEurPrice,
-  type ItadPrice,
-} from "../utils/itadPrice.js";
-import { getPostedDealIDs, addPostedDeal } from "../utils/postedDeals";
 import { config as env } from "../config";
-
-const storeNames: Record<string, string> = {
-  "1": "Steam",
-  "2": "GamersGate",
-  "3": "GreenManGaming",
-  "4": "Amazon",
-  "5": "GameStop",
-  "6": "Direct2Drive",
-  "7": "GoG",
-  "8": "Origin",
-  "9": "Get Games",
-  "10": "Shiny Loot",
-  "11": "Humble Store",
-  "12": "Desura",
-  "13": "Uplay",
-  "14": "IndieGameStand",
-  "15": "Fanatical",
-  "16": "Gamesrocket",
-  "17": "Games Republic",
-  "18": "SilaGames",
-  "19": "Playfield",
-  "20": "ImperialGames",
-  "21": "WinGameStore",
-  "22": "FunStockDigital",
-  "23": "GameBillet",
-  "24": "Voidu",
-  "25": "Epic Games Store",
-  "26": "Razer Game Store",
-  "27": "Gamesplanet",
-  "28": "Gamesload",
-  "29": "2Game",
-  "30": "IndieGala",
-  "31": "Blizzard Shop",
-  "32": "AllYouPlay",
-  "33": "DLGamer",
-  "34": "Noctre",
-  "35": "DreamGame",
-  "36": "Game Jolt",
-};
+import { getBotConfig } from "../utils/botConfig";
+import { getDeals } from "../utils/cheapshark";
+import {
+  getItadEurPrices,
+  getItadGameId,
+  getItadHistoricalLow,
+} from "../utils/itadPrice";
+import { addPostedDeal, getPostedDealIDs } from "../utils/postedDeals";
+import { storeNames } from "../utils/stores";
 
 function isSendableChannel(
   channel: Channel | null
@@ -66,87 +28,102 @@ function isSendableChannel(
   return (
     !!channel &&
     "send" in channel &&
-    typeof (
-      channel as
-        | TextChannel
-        | NewsChannel
-        | PublicThreadChannel
-        | PrivateThreadChannel
-    ).send === "function"
+    typeof (channel as any).send === "function" &&
+    "messages" in channel &&
+    typeof (channel as any).messages?.fetch === "function"
   );
 }
 
-export async function postNewDeals(client: Client, limit = 5): Promise<number> {
+export async function postNewDeals(
+  client: Client,
+  maxDeals = 5
+): Promise<number> {
   const config = await getBotConfig();
   if (!config.dealsChannelId) return 0;
 
-  const deals = await getDeals(limit);
-  if (!deals.length) return 0;
-
-  const postedIDs = await getPostedDealIDs();
-  const newDeals = deals.filter(
-    (deal: CheapSharkDeal) => !postedIDs.includes(deal.dealID)
-  );
+  const rawDeals = await getDeals(100);
+  const postedIDs = new Set(await getPostedDealIDs());
+  const newDeals = rawDeals.filter((deal) => !postedIDs.has(deal.dealID));
   if (!newDeals.length) return 0;
+
+  const apiKey = env.ITAD_API_KEY;
+  if (!apiKey) return 0;
 
   const channel = await client.channels.fetch(config.dealsChannelId);
   if (!isSendableChannel(channel)) return 0;
 
-  const apiKey: string = env.ITAD_API_KEY ?? "";
-  if (!apiKey) {
-    console.error("ITAD_API_KEY is not set");
-    return 0;
+  const titleToGameId = new Map<string, string>();
+  for (const deal of newDeals) {
+    const id = await getItadGameId(apiKey, deal.title);
+    if (id) titleToGameId.set(deal.dealID, id);
   }
 
-  let postedCount = 0;
+  const gameIDs = Array.from(titleToGameId.values());
+  const eurPrices = await getItadEurPrices(apiKey, gameIDs);
 
-  for (const deal of newDeals) {
-    let eurPrice: ItadPrice | null = null;
-    try {
-      const gameId = await getItadGameId(apiKey, deal.title);
-      if (gameId) {
-        eurPrice = await getItadEurPrice(apiKey, gameId, "DE");
-      }
-    } catch (err) {
-      console.warn(`ITAD lookup failed for "${deal.title}":`, err);
-    }
+  const enriched = await Promise.all(
+    newDeals.map(async (deal) => {
+      const gameId = titleToGameId.get(deal.dealID);
+      if (!gameId) return null;
 
+      const eurPrice = eurPrices[gameId];
+      if (!eurPrice) return null;
+
+      const historical = await getItadHistoricalLow(apiKey, gameId);
+      if (!historical) return null;
+
+      const discount = parseFloat(deal.savings);
+      const rating = parseFloat(deal.dealRating || "0");
+      const price = eurPrice.price_new;
+
+      const score = discount * 2 + rating - price * 0.3;
+
+      return {
+        gameId,
+        deal,
+        eurPrice,
+        score,
+        historical,
+      };
+    })
+  );
+
+  const sorted = enriched
+    .filter(Boolean)
+    .sort((a, b) => b!.score - a!.score)
+    .slice(0, maxDeals);
+
+  let posted = 0;
+
+  for (const entry of sorted) {
+    const { deal, eurPrice, historical, gameId } = entry!;
     const platform = storeNames[deal.storeID] || "Unknown";
     const imageUrl = deal.steamAppID
       ? `https://cdn.cloudflare.steamstatic.com/steam/apps/${deal.steamAppID}/header.jpg`
       : deal.thumb;
-    const savings = deal.savings
-      ? `${parseFloat(deal.savings).toFixed(0)}%`
-      : "N/A";
+
+    const savings = `${parseFloat(deal.savings).toFixed(0)}%`;
 
     const embed = new EmbedBuilder()
       .setTitle(`🎮 ${deal.title}`)
-      .setURL(
-        eurPrice?.url ||
-          `https://www.cheapshark.com/redirect?dealID=${deal.dealID}`
-      )
+      .setURL(eurPrice.url)
       .setImage(imageUrl)
       .setColor(0x00ae86)
       .addFields(
         {
           name: "💰 Sale Price",
-          value: eurPrice ? `€${eurPrice.price_new}` : "Check Deal",
+          value: `€${eurPrice.price_new.toFixed(2)}`,
           inline: true,
         },
         {
           name: "💸 Normal Price",
-          value: eurPrice ? `~~€${eurPrice.price_old}~~` : "N/A",
+          value: `~~€${eurPrice.price_old.toFixed(2)}~~`,
           inline: true,
         },
-        { name: "📉 Savings", value: `-${savings}`, inline: true },
+        { name: "📉 Discount", value: `-${savings}`, inline: true },
+        { name: "🏪 Store", value: eurPrice.shop, inline: true },
         {
-          name: "🏪 Store",
-          value: eurPrice ? eurPrice.shop : platform,
-          inline: true,
-        },
-        { name: "🎯 Platform", value: platform, inline: true },
-        {
-          name: "⭐ Deal Rating",
+          name: "⭐ Rating",
           value: deal.dealRating
             ? `${parseFloat(deal.dealRating).toFixed(1)}/10`
             : "N/A",
@@ -154,42 +131,46 @@ export async function postNewDeals(client: Client, limit = 5): Promise<number> {
         },
         {
           name: "🔗 Links",
-          value: eurPrice
-            ? `[🛒 Open Deal](${eurPrice.url}) • [🎮 View on Steam](https://store.steampowered.com/app/${deal.steamAppID || ""})`
-            : `[🛒 Open Deal](https://www.cheapshark.com/redirect?dealID=${deal.dealID})${deal.steamAppID ? ` • [🎮 View on Steam](https://store.steampowered.com/app/${deal.steamAppID})` : ""}`,
+          value: `[🛒 Deal](${eurPrice.url})${deal.steamAppID ? ` • [🎮 Steam](https://store.steampowered.com/app/${deal.steamAppID})` : ""}`,
           inline: false,
+        },
+        {
+          name: "📉 Historical Low",
+          value: `€${historical.price.toFixed(2)} • ${
+            historical.isLowest ? "**New All-Time Low!**" : "Not lowest"
+          }`,
+          inline: true,
         }
       )
       .setFooter({
-        text: "💡 EUR prices from IsThereAnyDeal • Prices may vary by region",
+        text: "Prices via IsThereAnyDeal.com • EU Region",
         iconURL: "https://isthereanydeal.com/assets/favicon.png",
       })
       .setTimestamp();
 
-    try {
-      const message = await channel.send({ embeds: [embed] });
+    const message = await channel.send({ embeds: [embed] });
 
-      await addPostedDeal({
-        dealId: deal.dealID,
-        messageId: message.id,
-        title: deal.title,
-        store: eurPrice?.shop ?? platform,
-        platform,
-        salePrice: eurPrice ? String(eurPrice.price_new) : null,
-        normalPrice: eurPrice ? String(eurPrice.price_old) : null,
-        savings,
-        dealRating: deal.dealRating ? String(deal.dealRating) : null,
-        imageUrl,
-        url:
-          eurPrice?.url ||
-          `https://www.cheapshark.com/redirect?dealID=${deal.dealID}`,
-        postedAt: new Date(),
-      });
-      postedCount++;
-    } catch (err) {
-      console.error(`Failed to post deal ${deal.dealID}:`, err);
-    }
+    await addPostedDeal({
+      dealId: deal.dealID,
+      messageId: message.id,
+      title: deal.title,
+      store: eurPrice.shop,
+      platform,
+      salePrice: eurPrice.price_new.toFixed(2),
+      normalPrice: eurPrice.price_old.toFixed(2),
+      savings,
+      dealRating: deal.dealRating,
+      imageUrl,
+      url: eurPrice.url,
+      postedAt: new Date(),
+      postedPrice: eurPrice.price_new,
+      lowestEver: historical.isLowest,
+      historicalLow: historical.price,
+      expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 6),
+    });
+
+    posted++;
   }
 
-  return postedCount;
+  return posted;
 }
