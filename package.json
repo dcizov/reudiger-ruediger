@@ -16,7 +16,11 @@
   "dependencies": {
     "discord.js": "^14.14.1",
     "dotenv": "^16.4.1",
+    "drizzle-orm": "^0.44.4",
+    "eslint-plugin-drizzle": "^0.2.3",
     "node-cron": "^4.2.1",
+    "pg": "^8.16.3",
+    "postgres": "^3.4.7",
     "zod": "^3.22.4"
   },
   "devDependencies": {
@@ -24,8 +28,10 @@
     "@commitlint/config-conventional": "^19.6.0",
     "@types/node": "^20.11.0",
     "@types/node-cron": "^3.0.11",
+    "@types/pg": "^8.15.5",
     "@typescript-eslint/eslint-plugin": "^6.19.0",
     "@typescript-eslint/parser": "^6.19.0",
+    "drizzle-kit": "^0.31.4",
     "eslint": "^8.56.0",
     "eslint-config-prettier": "^9.1.0",
     "husky": "^9.1.7",

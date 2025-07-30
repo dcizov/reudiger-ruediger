@@ -13,8 +13,9 @@ import {
   getItadGameId,
   getItadEurPrice,
   type ItadPrice,
-} from "../utils/itadPrice";
+} from "../utils/itadPrice.js";
 import { getPostedDealIDs, addPostedDeal } from "../utils/postedDeals";
+import { config as env } from "../config";
 
 const storeNames: Record<string, string> = {
   "1": "Steam",
@@ -82,7 +83,6 @@ export async function postNewDeals(client: Client, limit = 5): Promise<number> {
   const deals = await getDeals(limit);
   if (!deals.length) return 0;
 
-  // Get already posted deal IDs to prevent duplicates
   const postedIDs = await getPostedDealIDs();
   const newDeals = deals.filter(
     (deal: CheapSharkDeal) => !postedIDs.includes(deal.dealID)
@@ -92,13 +92,17 @@ export async function postNewDeals(client: Client, limit = 5): Promise<number> {
   const channel = await client.channels.fetch(config.dealsChannelId);
   if (!isSendableChannel(channel)) return 0;
 
-  const apiKey = process.env.ITAD_API_KEY!;
+  const apiKey: string = env.ITAD_API_KEY ?? "";
+  if (!apiKey) {
+    console.error("ITAD_API_KEY is not set");
+    return 0;
+  }
+
   let postedCount = 0;
 
   for (const deal of newDeals) {
     let eurPrice: ItadPrice | null = null;
     try {
-      // Use title to get ITAD game ID
       const gameId = await getItadGameId(apiKey, deal.title);
       if (gameId) {
         eurPrice = await getItadEurPrice(apiKey, gameId, "DE");
@@ -111,8 +115,6 @@ export async function postNewDeals(client: Client, limit = 5): Promise<number> {
     const imageUrl = deal.steamAppID
       ? `https://cdn.cloudflare.steamstatic.com/steam/apps/${deal.steamAppID}/header.jpg`
       : deal.thumb;
-
-    // Calculate savings percentage
     const savings = deal.savings
       ? `${parseFloat(deal.savings).toFixed(0)}%`
       : "N/A";
@@ -136,21 +138,13 @@ export async function postNewDeals(client: Client, limit = 5): Promise<number> {
           value: eurPrice ? `~~€${eurPrice.price_old}~~` : "N/A",
           inline: true,
         },
-        {
-          name: "📉 Savings",
-          value: `-${savings}`,
-          inline: true,
-        },
+        { name: "📉 Savings", value: `-${savings}`, inline: true },
         {
           name: "🏪 Store",
           value: eurPrice ? eurPrice.shop : platform,
           inline: true,
         },
-        {
-          name: "🎯 Platform",
-          value: platform,
-          inline: true,
-        },
+        { name: "🎯 Platform", value: platform, inline: true },
         {
           name: "⭐ Deal Rating",
           value: deal.dealRating
@@ -175,8 +169,22 @@ export async function postNewDeals(client: Client, limit = 5): Promise<number> {
     try {
       const message = await channel.send({ embeds: [embed] });
 
-      // Store the message ID along with the deal ID
-      await addPostedDeal(deal.dealID, message.id);
+      await addPostedDeal({
+        dealId: deal.dealID,
+        messageId: message.id,
+        title: deal.title,
+        store: eurPrice?.shop ?? platform,
+        platform,
+        salePrice: eurPrice ? String(eurPrice.price_new) : null,
+        normalPrice: eurPrice ? String(eurPrice.price_old) : null,
+        savings,
+        dealRating: deal.dealRating ? String(deal.dealRating) : null,
+        imageUrl,
+        url:
+          eurPrice?.url ||
+          `https://www.cheapshark.com/redirect?dealID=${deal.dealID}`,
+        postedAt: new Date(),
+      });
       postedCount++;
     } catch (err) {
       console.error(`Failed to post deal ${deal.dealID}:`, err);

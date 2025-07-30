@@ -11,7 +11,7 @@
  *
  * Types and scopes are restricted below for consistency.
  */
-module.exports = {
+export default {
   // Extending base conventional commit configuration for standard commit message formats
   extends: ["@commitlint/config-conventional"],
 

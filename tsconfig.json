@@ -12,6 +12,6 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true
   },
-  "include": ["src/**/*", "commitlint.config.cjs"],
+  "include": ["src/**/*", "commitlint.config.js"],
   "exclude": ["node_modules", "dist"]
 }

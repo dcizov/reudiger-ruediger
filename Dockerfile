@@ -1,24 +1,20 @@
-# Use official Node.js LTS image
-FROM node:20-alpine
-
-# Set working directory
+# 1) Builder stage -----------------------------------------------------
+FROM node:20-alpine AS builder
 WORKDIR /app
 
-# Install dependencies
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
+RUN npm ci
 
-# Copy source code
-COPY . .
-
-# Build TypeScript (if you build to dist)
+COPY . ./
 RUN npm run build
 
-# Set environment variables (optional, for production)
-# ENV NODE_ENV=production
+# 2) Runner stage ------------------------------------------------------
+FROM node:20-alpine AS runner
+WORKDIR /app
 
-# Start the bot
-#CMD ["node", "dist/index.js"]
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts
 
-# Dev mode
-CMD ["npx", "ts-node", "src/index.ts"]
+COPY --from=builder /app/dist ./dist
+
+CMD ["node", "dist/index.js"]
