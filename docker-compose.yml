@@ -1,19 +1,28 @@
 services:
   discord-bot:
-    build: .
+    build:
+      context: .
+      target: runner
     container_name: discord-bot
     restart: unless-stopped
-
-    # Inject env vars from your host .env
     env_file:
       - .env
-
-    # (Optional for local dev) bind-mount your source code
-    # → but note this will hide the built dist/ if you mount over /app
-    # If you only want to use “npm run dev” with tsx, uncomment:
-    # volumes:
-    #   - ./:/app
-    #   - /app/node_modules
-
-    # For production use the built image:
+    depends_on:
+      - postgres-db
     command: ["node", "dist/index.js"]
+
+  postgres-db:
+    image: postgres:15-alpine
+    container_name: discord-bot-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-password}
+      POSTGRES_DB: ${DATABASE_NAME:-sample-bot}
+    ports:
+      - "${DATABASE_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:

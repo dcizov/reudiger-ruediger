@@ -1,0 +1,2 @@
+ALTER TABLE "reaction_role_buttons" ADD CONSTRAINT "reaction_role_buttons_message_id_reaction_roles_message_id_fk" FOREIGN KEY ("message_id") REFERENCES "public"."reaction_roles"("message_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+CREATE UNIQUE INDEX "subscriptions_user_game_unique" ON "subscriptions" USING btree ("user_id","game_id");

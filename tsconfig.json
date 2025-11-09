@@ -1,17 +1,18 @@
 {
   "compilerOptions": {
-    "target": "ES2022",
+    "target": "ESNext",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "baseUrl": "src",
     "outDir": "dist",
-    "rootDir": "src",
     "strict": true,
-    "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "esModuleInterop": true
   },
-  "include": ["src/**/*", "commitlint.config.js"],
+  "include": ["src/**/*", "drizzle.config.ts", "*.mjs"],
   "exclude": ["node_modules", "dist"]
 }

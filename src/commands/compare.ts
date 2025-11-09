@@ -3,44 +3,45 @@ import {
   SlashCommandBuilder,
   type AutocompleteInteraction,
   type ChatInputCommandInteraction,
-} from "discord.js";
-import { config as env } from "../config";
-import type { Command } from "../types/command";
+} from 'discord.js';
+
+import { env } from '../config';
+import type { Command } from '../types/command';
 import {
   getItadEurPrices,
   getItadGameId,
-  getItadHistoricalLow,
-} from "../utils/itadPrice";
-import { searchItadGames } from "../utils/itadSearch";
+  getItadHistoricalLowBatch, // Changed from getItadHistoricalLow
+} from '../utils/itadPrice';
+import { searchItadGames } from '../utils/itadSearch';
 
 export const compare: Command = {
   data: new SlashCommandBuilder()
-    .setName("compare")
+    .setName('compare')
     .setDescription(
-      "Compare a game's current deal with its historical lowest price"
+      "Compare a game's current deal with its historical lowest price",
     )
     .addStringOption((opt) =>
       opt
-        .setName("title")
-        .setDescription("The title of the game")
+        .setName('title')
+        .setDescription('The title of the game')
         .setRequired(true)
-        .setAutocomplete(true)
+        .setAutocomplete(true),
     ),
 
   async execute(interaction: ChatInputCommandInteraction) {
     await interaction.deferReply();
 
-    const title = interaction.options.getString("title", true);
+    const title = interaction.options.getString('title', true);
     const apiKey = env.ITAD_API_KEY;
     if (!apiKey) {
-      await interaction.editReply("❌ Missing ITAD API Key.");
+      await interaction.editReply('❌ Missing ITAD API Key.');
       return;
     }
 
     const gameId = await getItadGameId(apiKey, title);
     if (!gameId) {
       await interaction.editReply(
-        `❌ Could not find "${title}" on IsThereAnyDeal.`
+        `❌ Could not find "${title}" on IsThereAnyDeal.`,
       );
       return;
     }
@@ -52,9 +53,12 @@ export const compare: Command = {
       return;
     }
 
-    const historical = await getItadHistoricalLow(apiKey, gameId);
+    // Changed to use batch version
+    const historicalData = await getItadHistoricalLowBatch(apiKey, [gameId]);
+    const historical = historicalData[gameId];
+
     if (!historical) {
-      await interaction.editReply("❌ Failed to fetch historical low.");
+      await interaction.editReply('❌ Failed to fetch historical low.');
       return;
     }
 
@@ -69,46 +73,46 @@ export const compare: Command = {
       .setColor(0x00ae86)
       .addFields(
         {
-          name: "💰 Current Price",
+          name: '💰 Current Price',
           value: `€${price.price_new.toFixed(2)}`,
           inline: true,
         },
         {
-          name: "💸 Normal Price",
+          name: '💸 Normal Price',
           value: `~~€${price.price_old.toFixed(2)}~~`,
           inline: true,
         },
         {
-          name: "📉 Discount",
+          name: '📉 Discount',
           value: `-${savingsPercent}%`,
           inline: true,
         },
         {
-          name: "📉 Historical Low",
+          name: '📉 Historical Low',
           value: `€${historical.price.toFixed(2)} • ${
-            historical.isLowest ? "**New all-time low!**" : "Not lowest"
+            historical.isLowest ? '**New all-time low!**' : 'Not lowest'
           }`,
           inline: true,
         },
         {
-          name: "🏪 Best Store",
+          name: '🏪 Best Store',
           value: price.shop,
           inline: true,
         },
         {
-          name: "🌍 Region",
-          value: "🇪🇺 EU (DE)",
+          name: '🌍 Region',
+          value: '🇪🇺 EU (DE)',
           inline: true,
         },
         {
-          name: "🔗 Links",
+          name: '🔗 Links',
           value: `[🛒 Open Deal](${price.url})`,
           inline: false,
-        }
+        },
       )
       .setFooter({
-        text: "Data via IsThereAnyDeal.com • Prices may vary by region",
-        iconURL: "https://isthereanydeal.com/assets/favicon.png",
+        text: 'Data via IsThereAnyDeal.com • Prices may vary by region',
+        iconURL: 'https://isthereanydeal.com/assets/favicon.png',
       })
       .setTimestamp();
 

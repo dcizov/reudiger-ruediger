@@ -1,23 +1,33 @@
-import { Client } from "discord.js";
-import { eq } from "drizzle-orm";
-import { config as env } from "../config";
-import { db } from "../db/index";
-import { subscriptions, userSettings } from "../db/schema";
-import { getItadEurPrices } from "../utils/itadPrice";
+import { Client } from 'discord.js';
+import { eq, inArray } from 'drizzle-orm';
+
+import { env } from '../config';
+import { db } from '../db/index';
+import { subscriptions, userSettings } from '../db/schema';
+import { getItadEurPrices } from '../utils/itadPrice';
 
 export async function checkSubscriptionsAndNotify(
-  client: Client
+  client: Client,
 ): Promise<number> {
   const apiKey = env.ITAD_API_KEY;
   if (!apiKey) {
-    console.error("❌ ITAD_API_KEY not set.");
+    console.error('❌ ITAD_API_KEY not set.');
     return 0;
   }
 
   const allSubs = await db.select().from(subscriptions);
   if (!allSubs.length) return 0;
 
-  const groupedByGame = new Map<string, Array<(typeof allSubs)[number]>>();
+  // Fix: Fetch all user settings at once to avoid N+1 queries
+  const userIds = [...new Set(allSubs.map((s) => s.userId))];
+  const allSettings = await db.query.userSettings.findMany({
+    where: inArray(userSettings.userId, userIds),
+  });
+  const settingsMap = new Map(
+    allSettings.map((s) => [s.userId, s.notificationsEnabled]),
+  );
+
+  const groupedByGame = new Map<string, (typeof allSubs)[number][]>();
 
   for (const sub of allSubs) {
     if (!groupedByGame.has(sub.gameId)) {
@@ -36,17 +46,12 @@ export async function checkSubscriptionsAndNotify(
     const currentPriceInCents = Math.round(priceInfo.price_new * 100);
 
     for (const sub of subsForGame) {
-      // Check settings
-      const setting = await db.query.userSettings.findFirst({
-        where: eq(userSettings.userId, sub.userId),
-      });
-
-      const notificationsEnabled = setting?.notificationsEnabled ?? true;
+      // Fix: Use Map lookup instead of database query
+      const notificationsEnabled = settingsMap.get(sub.userId) ?? true;
       if (!notificationsEnabled) continue;
 
-      const previouslyNotified = sub.notified === true;
       const storedPrice = sub.currentPrice ?? currentPriceInCents;
-      const threshold = sub.targetPrice; // can be null
+      const threshold = sub.targetPrice;
 
       const shouldNotify =
         threshold != null
@@ -54,7 +59,6 @@ export async function checkSubscriptionsAndNotify(
           : currentPriceInCents < storedPrice;
 
       if (!shouldNotify) {
-        // Reset "notified" flag if price increased again after prior alert
         if (sub.notified) {
           await db
             .update(subscriptions)
@@ -68,7 +72,7 @@ export async function checkSubscriptionsAndNotify(
       if (!user) continue;
 
       const savings = (
-        (1 - currentPriceInCents / (sub.historicalLow || currentPriceInCents)) *
+        (1 - currentPriceInCents / (sub.historicalLow ?? currentPriceInCents)) *
         100
       ).toFixed(0);
 
@@ -76,7 +80,7 @@ export async function checkSubscriptionsAndNotify(
 
 💰 New Price: €${priceInfo.price_new.toFixed(2)}
 💸 Previous: €${(storedPrice / 100).toFixed(2)}
-🎯 Target: ${sub.targetPrice ? `€${(sub.targetPrice / 100).toFixed(2)}` : "Any drop"}
+🎯 Target: ${sub.targetPrice ? `€${(sub.targetPrice / 100).toFixed(2)}` : 'Any drop'}
 📉 Savings vs historical: ${savings}%
 🏪 Store: ${priceInfo.shop}
 🔗 ${priceInfo.url}`;

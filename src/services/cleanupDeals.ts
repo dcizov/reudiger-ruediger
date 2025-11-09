@@ -5,24 +5,26 @@ import {
   type PrivateThreadChannel,
   type PublicThreadChannel,
   type TextChannel,
-} from "discord.js";
-import { getBotConfig } from "../utils/botConfig";
-import { getPostedDeals, removePostedDeal } from "../utils/postedDeals";
+} from 'discord.js';
+
+import { getBotConfig } from '../utils/botConfig';
+import { logger } from '../utils/logger';
+import { getPostedDeals, removePostedDeal } from '../utils/postedDeals';
 
 function isSendableChannel(
-  channel: Channel | null
+  channel: Channel | null,
 ): channel is
   | TextChannel
   | NewsChannel
   | PublicThreadChannel
   | PrivateThreadChannel {
-  return (
-    !!channel &&
-    "send" in channel &&
-    typeof (channel as any).send === "function" &&
-    "messages" in channel &&
-    typeof (channel as any).messages?.fetch === "function"
-  );
+  if (!channel) return false;
+
+  if (!('send' in channel)) return false;
+  if (typeof channel.send !== 'function') return false;
+  if (!('messages' in channel)) return false;
+
+  return true;
 }
 
 export async function cleanupExpiredDeals(client: Client): Promise<number> {
@@ -31,11 +33,11 @@ export async function cleanupExpiredDeals(client: Client): Promise<number> {
   const now = new Date();
 
   const expired = postedDeals.filter(
-    (deal) => deal.expiresAt && deal.expiresAt < now
+    (deal) => deal.expiresAt && deal.expiresAt < now,
   );
   if (!expired.length) return 0;
 
-  const channel = await client.channels.fetch(config.dealsChannelId ?? "");
+  const channel = await client.channels.fetch(config.dealsChannelId ?? '');
   if (!isSendableChannel(channel)) return 0;
 
   let removed = 0;
@@ -44,7 +46,13 @@ export async function cleanupExpiredDeals(client: Client): Promise<number> {
     try {
       const msg = await channel.messages.fetch(deal.messageId);
       await msg.delete();
-    } catch {}
+    } catch (error) {
+      // Message might already be deleted by user/admin - this is acceptable
+      logger.debug(
+        `Could not delete message ${deal.messageId} for deal "${deal.title}":`,
+        { messageId: deal.messageId, dealTitle: deal.title, error },
+      );
+    }
     await removePostedDeal(deal.dealId);
     removed++;
   }

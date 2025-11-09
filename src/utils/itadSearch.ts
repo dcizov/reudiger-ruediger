@@ -1,13 +1,44 @@
+import { z } from 'zod';
+
+import { ItadSearchResponseSchema } from '../schemas/itadSearch';
+import { logger } from './logger';
+import { fetchWithRetry } from './retryFetch';
+
+// Helper to redact API key from URLs in logs
+function redactApiKey(url: string): string {
+  return url.replace(/key=[^&]+/, 'key=[REDACTED]');
+}
+
 export async function searchItadGames(
   apiKey: string,
-  query: string
+  query: string,
 ): Promise<string[]> {
-  const url = `https://api.isthereanydeal.com/games/search/v2?key=${apiKey}&title=${encodeURIComponent(query)}&limit=25`;
-  const res = await fetch(url);
-  if (!res.ok) return [];
+  const url = `https://api.isthereanydeal.com/games/search/v1?key=${apiKey}&title=${encodeURIComponent(query)}&results=25`;
 
-  const data = await res.json();
-  const matches = data?.results ?? [];
+  try {
+    const res = await fetchWithRetry(url);
+    if (!res.ok) {
+      logger.warn(`ITAD search failed: ${res.status} ${redactApiKey(url)}`, {
+        status: res.status,
+        query,
+      });
+      return [];
+    }
 
-  return matches.map((item: { title: string }) => item.title);
+    const rawData: unknown = await res.json();
+    const result = ItadSearchResponseSchema.safeParse(rawData);
+
+    if (!result.success) {
+      logger.error('Invalid ITAD search response:', {
+        error: z.treeifyError(result.error),
+      });
+      return [];
+    }
+
+    // v1 API returns array directly, not wrapped in { results: [...] }
+    return result.data.map((item) => item.title);
+  } catch (error) {
+    logger.error('Failed to search ITAD games:', { error });
+    return [];
+  }
 }

@@ -6,54 +6,48 @@
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
     "build": "tsup src/index.ts --minify",
+    "check": "npm run lint && npm run typecheck",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
-    "lint": "eslint . --fix",
-    "format": "prettier --write \"src/**/*.ts\"",
-    "format:check": "prettier --check \"src/**/*.ts\"",
+    "lint": "eslint \"src/**/*.{ts,js}\" --cache",
+    "lint:fix": "eslint \"src/**/*.{ts,js}\" --fix --cache",
+    "format:check": "prettier --check \"src/**/*.{ts,js,md,mdx}\" --cache --ignore-path .prettierignore",
+    "format:write": "prettier --write \"src/**/*.{ts,js,md,mdx}\" --cache --ignore-path .prettierignore",
     "typecheck": "tsc --noEmit",
     "deploy": "tsx src/deploy-commands.ts",
     "prepare": "husky"
   },
   "dependencies": {
-    "discord.js": "^14.14.1",
-    "dotenv": "^16.4.1",
-    "drizzle-orm": "^0.44.4",
-    "eslint-plugin-drizzle": "^0.2.3",
+    "discord.js": "^14.24.2",
+    "dotenv": "^17.2.3",
+    "drizzle-orm": "^0.44.7",
     "node-cron": "^4.2.1",
-    "pg": "^8.16.3",
     "postgres": "^3.4.7",
-    "zod": "^3.22.4"
+    "winston": "^3.18.3",
+    "zod": "^4.1.12"
   },
   "devDependencies": {
-    "@commitlint/cli": "^19.6.1",
-    "@commitlint/config-conventional": "^19.6.0",
-    "@eslint/js": "^9.32.0",
-    "@types/node": "^20.11.0",
+    "@commitlint/cli": "^20.1.0",
+    "@commitlint/config-conventional": "^20.0.0",
+    "@eslint/js": "^9.39.1",
+    "@ianvs/prettier-plugin-sort-imports": "^4.7.0",
+    "@types/node": "^24.10.0",
     "@types/node-cron": "^3.0.11",
-    "@types/pg": "^8.15.5",
-    "@typescript-eslint/eslint-plugin": "^6.21.0",
-    "@typescript-eslint/parser": "^6.21.0",
-    "drizzle-kit": "^0.31.4",
-    "eslint": "^8.56.0",
-    "eslint-config-prettier": "^9.1.0",
+    "@typescript-eslint/eslint-plugin": "^8.46.3",
+    "@typescript-eslint/parser": "^8.46.3",
+    "drizzle-kit": "^0.31.6",
+    "eslint": "^9.39.1",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-drizzle": "^0.2.3",
+    "eslint-plugin-prettier": "^5.5.4",
     "husky": "^9.1.7",
-    "lint-staged": "^15.4.3",
-    "prettier": "^3.2.0",
-    "tsup": "^8.0.1",
-    "tsx": "^4.7.0",
-    "typescript": "^5.3.3"
-  },
-  "packageManager": "npm@10.7.0",
-  "lint-staged": {
-    "src/**/*.{js,ts}": [
-      "npm run lint",
-      "npm run format"
-    ],
-    "*.json": [
-      "npm run format"
-    ]
+    "lint-staged": "^16.2.6",
+    "prettier": "^3.6.2",
+    "tsup": "^8.5.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.46.3"
   }
 }

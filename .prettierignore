@@ -1,0 +1,30 @@
+# Node modules and build output
+node_modules
+dist
+build
+
+# Drizzle migrations (database files not to format)
+drizzle/migrations
+drizzle/migrations/meta
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+
+# Lock files
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# IDE/editor
+.vscode
+
+# System files
+.DS_Store
+
+# Database files (if any)
+*.sqlite
