@@ -19,7 +19,7 @@
     "format:write": "prettier --write \"src/**/*.{ts,js,md,mdx}\" --cache --ignore-path .prettierignore",
     "typecheck": "tsc --noEmit",
     "deploy": "tsx src/deploy-commands.ts",
-    "prepare": "husky || exit 0"
+    "prepare": "is-ci || husky"
   },
   "dependencies": {
     "body-parser": "^2.2.0",
@@ -49,6 +49,7 @@
     "eslint-plugin-drizzle": "^0.2.3",
     "eslint-plugin-prettier": "^5.5.4",
     "husky": "^9.1.7",
+    "is-ci": "^3.0.1",
     "lint-staged": "^16.2.6",
     "prettier": "^3.6.2",
     "tsup": "^8.5.0",

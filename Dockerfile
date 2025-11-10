@@ -9,9 +9,9 @@ RUN npm ci --omit=dev --ignore-scripts
 
 FROM base AS builder
 COPY package.json package-lock.json ./
-RUN npm ci --ignore-scripts
+RUN npm ci
 COPY . .
-RUN ./node_modules/.bin/tsup src/index.ts --minify
+RUN npm run build
 
 FROM base AS development
 ENV NODE_ENV=development
