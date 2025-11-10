@@ -1,36 +1,34 @@
-FROM node:20-alpine AS builder
-
+FROM node:22-alpine AS base
 WORKDIR /app
+ENV NODE_ENV=production
+EXPOSE 3000
 
-RUN apk update && apk upgrade && \
-    apk add busybox=1.36.1-r29 && \
-    rm -rf /var/cache/apk/*
-
+FROM base AS deps
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm ci --production
 
+FROM base AS builder
+COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+
 RUN npm run build
 
-FROM node:20-alpine AS runner
-
-WORKDIR /app
-
-RUN apk update && apk upgrade && \
-    apk add busybox=1.36.1-r29 && \
-    rm -rf /var/cache/apk/*
-
+FROM base AS development
+ENV NODE_ENV=development
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev --ignore-scripts
+RUN npm ci
+COPY . .
+CMD ["npm", "run", "dev"]
 
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/drizzle ./drizzle
-COPY --from=builder /app/drizzle.config.ts ./drizzle.config.ts
-
+FROM base AS production
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/.env* ./
+
 RUN chown -R appuser:appgroup /app
 USER appuser
-
-ENV NODE_ENV=production
 
 CMD ["node", "dist/index.js"]

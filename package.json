@@ -4,6 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "tsx watch src/index.ts",
+    "dev:docker": "./start-dev.sh",
+    "dev:db": "./start-dev.sh",
     "start": "node dist/index.js",
     "build": "tsup src/index.ts --minify",
     "check": "npm run lint && npm run typecheck",

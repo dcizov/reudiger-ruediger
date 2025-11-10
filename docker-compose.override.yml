@@ -1,0 +1,14 @@
+services:
+  discord-bot:
+    container_name: reudiger-ruediger-dev
+    build:
+      target: development
+    volumes:
+      - ./:/app
+      - /app/node_modules
+    environment:
+      NODE_ENV: development
+    command: ['npm', 'run', 'dev']
+
+  postgres-db:
+    container_name: ${DB_NAME}-postgres

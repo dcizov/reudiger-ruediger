@@ -1,0 +1,16 @@
+services:
+  discord-bot:
+    container_name: reudiger-ruediger-prod
+    build:
+      target: production
+    environment:
+      NODE_ENV: production
+    develop: null
+    volumes: []
+    command: ['node', 'dist/index.js']
+    restart: always
+
+  postgres:
+    container_name: ${DB_NAME}-postgres-prod
+    ports: []
+    restart: always
