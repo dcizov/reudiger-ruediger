@@ -8,7 +8,8 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts
 
 FROM base AS builder
-COPY --from=deps /app/node_modules ./node_modules
+COPY package.json package-lock.json ./
+RUN npm ci --ignore-scripts
 COPY . .
 
 RUN npm run build
