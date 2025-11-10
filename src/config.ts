@@ -13,6 +13,17 @@ const envSchema = z.object({
     .enum(['development', 'production', 'test'])
     .default('development'),
   LOG_LEVEL: z.enum(['error', 'warn', 'info', 'debug']).default('info'),
+  WEBHOOK_PORT: z
+    .string()
+    .regex(/^\d+$/, 'WEBHOOK_PORT must be a valid port number')
+    .optional()
+    .transform((val) => (val ? Number(val) : 3001)),
+  WEBHOOK_SECRET: z.string().min(1, 'WEBHOOK_SECRET is required'),
+  ENABLE_WEBHOOK_SERVER: z
+    .string()
+    .transform((val) => val === 'true')
+    .optional()
+    .default(false),
 });
 
 export type Env = z.infer<typeof envSchema>;

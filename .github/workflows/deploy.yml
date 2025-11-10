@@ -1,0 +1,20 @@
+name: Deploy Discord Bot
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Trigger deploy webhook on VPS
+        uses: fjogeleit/http-request-action@v1
+        with:
+          url: 'https://your-vps-domain-or-ip:3001/webhook'
+          method: 'POST'
+          headers: |
+            x-webhook-token: ${{ secrets.WEBHOOK_SECRET }}
+          # optional: body: '{}' or customize your deployment payload

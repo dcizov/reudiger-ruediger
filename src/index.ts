@@ -2,7 +2,7 @@ import type { InteractionReplyOptions, MessagePayload } from 'discord.js';
 import { Client, Events, GatewayIntentBits, Interaction } from 'discord.js';
 
 import { commands } from './commands';
-import { env } from './config';
+import { env, isDev } from './config';
 import {
   startDealScheduler,
   stopDealScheduler,
@@ -14,6 +14,7 @@ import {
   updateUserRoleCooldown,
   type ReactionRoleButton,
 } from './utils/reactionRoles';
+import { startWebhookServer } from './webhookServer';
 
 const client = new Client({
   intents: [
@@ -331,3 +332,8 @@ async function gracefulShutdown(signal: string): Promise<void> {
 
 process.on('SIGTERM', () => void gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => void gracefulShutdown('SIGINT'));
+
+// Conditionally start webhook server
+if (isDev || env.ENABLE_WEBHOOK_SERVER) {
+  startWebhookServer();
+}
