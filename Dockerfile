@@ -5,7 +5,7 @@ EXPOSE 3000
 
 FROM base AS deps
 COPY package.json package-lock.json ./
-RUN npm ci --production
+RUN npm ci --omit=dev --ignore-scripts
 
 FROM base AS builder
 COPY --from=deps /app/node_modules ./node_modules
