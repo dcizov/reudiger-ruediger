@@ -9,11 +9,9 @@ RUN npm ci --omit=dev --ignore-scripts
 
 FROM base AS builder
 COPY package.json package-lock.json ./
-ENV HUSKY=0
-RUN npm ci
+RUN npm ci --ignore-scripts
 COPY . .
-
-RUN npm run build
+RUN npx tsup src/index.ts --minify
 
 FROM base AS development
 ENV NODE_ENV=development
