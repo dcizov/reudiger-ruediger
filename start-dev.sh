@@ -22,12 +22,12 @@ if [ -z "$DATABASE_URL" ]; then
 fi
 
 # Extract DB info from DATABASE_URL and export for docker-compose
-export DB_PASSWORD=$(echo "$DATABASE_URL" | awk -F':' '{print $3}' | awk -F'@' '{print $1}')
-export DB_PORT=$(echo "$DATABASE_URL" | awk -F':' '{print $4}' | awk -F'/' '{print $1}')
-export DB_NAME=$(echo "$DATABASE_URL" | awk -F'/' '{print $4}')
+export DATABASE_PASSWORD=$(echo "$DATABASE_URL" | awk -F':' '{print $3}' | awk -F'@' '{print $1}')
+export DATABASE_PORT=$(echo "$DATABASE_URL" | awk -F':' '{print $4}' | awk -F'/' '{print $1}')
+export DATABASE_NAME=$(echo "$DATABASE_URL" | awk -F'/' '{print $4}')
 
 # Validate extracted values
-if [ -z "$DB_PASSWORD" ] || [ -z "$DB_NAME" ]; then
+if [ -z "$DATABASE_PASSWORD" ] || [ -z "$DATABASE_NAME" ]; then
   echo "ERROR: Could not parse DATABASE_URL. Expected format:"
   echo "postgresql://user:password@host:port/database"
   echo "Got: $DATABASE_URL"
@@ -61,8 +61,8 @@ fi
 
 # Check if database port is already in use
 if command -v nc >/dev/null 2>&1; then
-  if nc -z localhost "$DB_PORT" 2>/dev/null; then
-    echo "Port $DB_PORT is already in use. Checking if it's our container..."
+  if nc -z localhost "$DATABASE_PORT" 2>/dev/null; then
+    echo "Port $DATABASE_PORT is already in use. Checking if it's our container..."
     if [ "$($DOCKER_CMD compose ps -q postgres-db)" ]; then
       echo "Infrastructure services are already running via Docker Compose."
       echo "Starting Discord bot service..."
@@ -70,14 +70,14 @@ if command -v nc >/dev/null 2>&1; then
       echo "✅ Bot started. Use '$DOCKER_CMD compose logs -f discord-bot' to see logs."
       exit 0
     else
-      echo "Port is used by another process. Please free port $DB_PORT and try again."
+      echo "Port is used by another process. Please free port $DATABASE_PORT and try again."
       exit 1
     fi
   fi
 fi
 
 # Warn about default password
-if [ "$DB_PASSWORD" = "password" ]; then
+if [ "$DATABASE_PASSWORD" = "password" ]; then
   echo "⚠️  WARNING: You are using the default database password!"
   read -p "Should we generate a random password for you? [y/N]: " -r REPLY
   if [[ $REPLY =~ ^[Yy]$ ]]; then
