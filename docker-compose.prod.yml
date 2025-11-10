@@ -10,7 +10,7 @@ services:
     command: ['node', 'dist/index.js']
     restart: always
 
-  postgres:
+  postgres-db:
     container_name: '${DATABASE_NAME}-postgres-prod'
     ports: []
     restart: always
