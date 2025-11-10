@@ -11,4 +11,4 @@ services:
     command: ['npm', 'run', 'dev']
 
   postgres-db:
-    container_name: ${DB_NAME}-postgres
+    container_name: '${DB_NAME:-sample-bot}-postgres'
