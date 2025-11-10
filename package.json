@@ -19,7 +19,7 @@
     "format:write": "prettier --write \"src/**/*.{ts,js,md,mdx}\" --cache --ignore-path .prettierignore",
     "typecheck": "tsc --noEmit",
     "deploy": "tsx src/deploy-commands.ts",
-    "prepare": "husky"
+    "prepare": "husky || exit 0"
   },
   "dependencies": {
     "body-parser": "^2.2.0",

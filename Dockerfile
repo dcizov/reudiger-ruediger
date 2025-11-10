@@ -11,7 +11,7 @@ FROM base AS builder
 COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts
 COPY . .
-RUN npx tsup src/index.ts --minify
+RUN ./node_modules/.bin/tsup src/index.ts --minify
 
 FROM base AS development
 ENV NODE_ENV=development
