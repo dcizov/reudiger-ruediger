@@ -9,7 +9,8 @@ RUN npm ci --omit=dev --ignore-scripts
 
 FROM base AS builder
 COPY package.json package-lock.json ./
-RUN npm ci --ignore-scripts
+ENV HUSKY=0
+RUN npm ci
 COPY . .
 
 RUN npm run build
