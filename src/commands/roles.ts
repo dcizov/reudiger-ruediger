@@ -35,7 +35,6 @@ export const roles: Command = {
       const guildId = interaction.guild.id;
       const userId = interaction.user.id;
 
-      // Check cooldown
       const cooldownCheck = await checkUserRoleCooldown(userId, guildId);
       if (!cooldownCheck.canChange) {
         await interaction.editReply({
@@ -44,7 +43,6 @@ export const roles: Command = {
         return;
       }
 
-      // Fetch all roles configured for this guild
       const allRoles = await getAllRolesInGuild(guildId);
 
       if (allRoles.length === 0) {
@@ -54,7 +52,6 @@ export const roles: Command = {
         return;
       }
 
-      // Get user's current roles
       const userRoles = allRoles.filter((roleButton) => {
         if (
           typeof interaction.member === 'object' &&
@@ -89,50 +86,47 @@ export const roles: Command = {
         return;
       }
 
-      // Group roles by category
       const groupedRoles = groupRolesByCategory(availableRoles);
 
-      // Build embed
       const embed = new EmbedBuilder()
         .setTitle('🎭 Manage Your Roles')
-        .setDescription('Toggle roles on or off using the buttons below.')
-        .setColor(0x5865f2)
-        .setFooter({ text: '⏱️ Cooldown: 5 minutes between changes' });
+        .setDescription(
+          'Select the roles you want by clicking the buttons below.\nGreen buttons = roles you have\nGray buttons = roles you can get',
+        )
+        .setColor(0x5865f2);
 
-      // Add fields for each category
       const fields: { name: string; value: string; inline: boolean }[] = [];
       for (const [category, categoryRoles] of groupedRoles) {
         const roleList = categoryRoles
           .map((role) => {
-            const hasRole = userRoles.some((ur) => ur.roleId === role.roleId);
-            const statusIcon = hasRole ? '✅' : '⬜';
             const lockIcon = role.required ? ' 🔒' : '';
-            // Only show emoji and label, not duplicate status
-            return `${statusIcon} ${role.emoji} **${role.label}**${lockIcon}`;
+            return `${role.emoji} **${role.label}**${lockIcon}`;
           })
           .join('\n');
 
         fields.push({
-          name: `${category}`,
+          name: category,
           value: roleList || 'No roles',
           inline: false,
         });
       }
       embed.addFields(fields);
+      embed.setFooter({
+        text: '⏱️ You can change roles once every 5 minutes',
+      });
 
       const components: ActionRowBuilder<
         ButtonBuilder | StringSelectMenuBuilder
       >[] = [];
 
       if (availableRoles.length <= 5) {
-        // Use buttons - simplified labels
         const buttons = availableRoles.map((role) => {
           const hasRole = userRoles.some((ur) => ur.roleId === role.roleId);
 
           return new ButtonBuilder()
             .setCustomId(`role_button_${role.buttonId}`)
-            .setLabel(role.label) // Just the label, no emojis
-            .setEmoji(role.emoji) // Use Discord's emoji field
+            .setLabel(role.label)
+            .setEmoji(role.emoji)
             .setStyle(hasRole ? ButtonStyle.Success : ButtonStyle.Secondary)
             .setDisabled(role.required === true);
         });
@@ -142,14 +136,13 @@ export const roles: Command = {
         );
         components.push(row);
       } else {
-        // Use select menu
         const options = availableRoles.map((role) => {
           const hasRole = userRoles.some((ur) => ur.roleId === role.roleId);
           return {
-            label: role.label, // Just the label
+            label: role.label,
             value: role.buttonId,
             description: role.category ?? 'Other',
-            emoji: role.emoji, // Use Discord's emoji field
+            emoji: role.emoji,
             default: hasRole,
           };
         });
