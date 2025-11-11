@@ -8,10 +8,16 @@ import {
   SlashCommandBuilder,
   type ChatInputCommandInteraction,
 } from 'discord.js';
-import { sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 
 import { db } from '../db/index';
-import { reactionRoles, subscriptions } from '../db/schema';
+import {
+  newsSettings,
+  reactionRoleButtons,
+  reactionRoles,
+  subscriptions,
+} from '../db/schema';
+import { AVAILABLE_NEWS_SOURCES } from '../services/newsService';
 import type { SubcommandCommand } from '../types/command';
 import {
   getBotConfig,
@@ -366,6 +372,13 @@ async function handleSchedule(interaction: ChatInputCommandInteraction) {
 async function handleView(interaction: ChatInputCommandInteraction) {
   await interaction.deferReply({ ephemeral: true });
 
+  if (!interaction.guildId) {
+    await interaction.editReply(
+      '❌ This command can only be used in a server.',
+    );
+    return;
+  }
+
   const config = await getBotConfig();
   const logChannelId = await getLogChannelId();
 
@@ -375,11 +388,67 @@ async function handleView(interaction: ChatInputCommandInteraction) {
     .from(subscriptions);
   const totalSubscriptions = Number(subCountResult[0]?.count ?? 0);
 
-  // Get total reaction role messages count
-  const roleCountResult = await db
-    .select({ count: sql<number>`count(*)` })
-    .from(reactionRoles);
-  const totalRoleMessages = Number(roleCountResult[0]?.count ?? 0);
+  // Get reaction role messages with button counts
+  const roleMessages = await db
+    .select({
+      messageId: reactionRoles.messageId,
+      channelId: reactionRoles.channelId,
+      createdAt: reactionRoles.createdAt,
+    })
+    .from(reactionRoles)
+    .where(eq(reactionRoles.guildId, interaction.guildId))
+    .orderBy(reactionRoles.createdAt);
+
+  // Get button counts for each message
+  const roleMessagesWithCounts = await Promise.all(
+    roleMessages.map(async (rm) => {
+      const buttons = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(reactionRoleButtons)
+        .where(eq(reactionRoleButtons.messageId, rm.messageId));
+
+      return {
+        ...rm,
+        buttonCount: Number(buttons[0]?.count ?? 0),
+      };
+    }),
+  );
+
+  // Get enabled news sources for this guild
+  const enabledNewsSources = await db
+    .select()
+    .from(newsSettings)
+    .where(
+      and(
+        eq(newsSettings.guildId, interaction.guildId),
+        eq(newsSettings.enabled, true),
+      ),
+    );
+
+  // Format news sources display
+  const newsSourcesDisplay =
+    enabledNewsSources.length > 0
+      ? enabledNewsSources
+          .map((setting) => {
+            const source =
+              AVAILABLE_NEWS_SOURCES[
+                setting.source as keyof typeof AVAILABLE_NEWS_SOURCES
+              ];
+            return source ? `${source.icon} ${source.name}` : setting.source;
+          })
+          .join(', ')
+      : 'All sources enabled by default';
+
+  // Format role messages display
+  const roleMessagesDisplay =
+    roleMessagesWithCounts.length > 0
+      ? roleMessagesWithCounts
+          .map(
+            (rm) =>
+              `<#${rm.channelId}> - ${rm.buttonCount} roles ([Jump](https://discord.com/channels/${interaction.guildId}/${rm.channelId}/${rm.messageId}))`,
+          )
+          .join('\n')
+      : 'No role messages configured';
 
   const embed = new EmbedBuilder()
     .setTitle('⚙️ Bot Configuration')
@@ -410,14 +479,24 @@ async function handleView(interaction: ChatInputCommandInteraction) {
         inline: true,
       },
       {
-        name: '🎭 Role Messages',
-        value: `${totalRoleMessages} active`,
-        inline: true,
-      },
-      {
         name: '📊 Total Subscriptions',
         value: `${totalSubscriptions} across all users`,
         inline: true,
+      },
+      {
+        name: '\u200B',
+        value: '\u200B',
+        inline: true,
+      },
+      {
+        name: '📰 Enabled News Sources',
+        value: newsSourcesDisplay,
+        inline: false,
+      },
+      {
+        name: `🎭 Role Messages (${roleMessagesWithCounts.length} active)`,
+        value: roleMessagesDisplay,
+        inline: false,
       },
     )
     .setFooter({ text: 'Use /setup <subcommand> to change settings' })
