@@ -29,6 +29,13 @@
       "when": 1762692027796,
       "tag": "0003_spicy_scarlet_witch",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1762899536867,
+      "tag": "0004_spooky_hydra",
+      "breakpoints": true
     }
   ]
 }

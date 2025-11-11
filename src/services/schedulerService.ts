@@ -4,17 +4,20 @@ import cron, { type ScheduledTask } from 'node-cron';
 import { getBotConfig } from '../utils/botConfig';
 import { logger } from '../utils/logger';
 import { cleanupExpiredDeals } from './cleanupDeals';
+import { checkGameNews } from './newsService';
 import { postNewDeals } from './postNewDeals';
 import { checkSubscriptionsAndNotify } from './subscriptionChecker';
 
 let currentTask: ScheduledTask | null = null;
 let cleanupTask: ScheduledTask | null = null;
 let subscriptionTask: ScheduledTask | null = null;
+let newsTask: ScheduledTask | null = null;
 
 export async function startDealScheduler(client: Client): Promise<void> {
   if (currentTask) void currentTask.stop();
   if (cleanupTask) void cleanupTask.stop();
   if (subscriptionTask) void subscriptionTask.stop();
+  if (newsTask) void newsTask.stop();
 
   const config = await getBotConfig();
   const dealSchedule = config.schedule || '*/30 * * * *'; // Fallback to 30 mins
@@ -41,6 +44,15 @@ export async function startDealScheduler(client: Client): Promise<void> {
         logger.info(`🔔 Notified ${notified} subscribed user(s).`, {
           notified,
         });
+    })();
+  });
+
+  newsTask = cron.schedule('0 * * * *', () => {
+    void (async () => {
+      // Pass guild ID if available from client
+      const posted = await checkGameNews(client);
+      if (posted > 0)
+        logger.info(`📰 Posted ${posted} news item(s).`, { posted });
     })();
   });
 

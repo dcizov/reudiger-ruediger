@@ -112,3 +112,12 @@ export const userRoleCooldowns = pgTable(
     ),
   }),
 );
+
+export const newsSettings = pgTable('news_settings', {
+  id: serial('id').primaryKey(),
+  guildId: text('guild_id').notNull(),
+  source: text('source').notNull(),
+  enabled: boolean('enabled').notNull().default(true),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});

@@ -5,6 +5,7 @@ import { botConfig } from '../db/schema';
 
 export interface BotConfig {
   dealsChannelId: string;
+  newsChannelId: string;
   schedule: string;
 }
 
@@ -12,10 +13,12 @@ export async function getBotConfig(): Promise<BotConfig> {
   const rows = await db.select().from(botConfig);
   const config: BotConfig = {
     dealsChannelId: '',
+    newsChannelId: '',
     schedule: '0 9,15,21 * * *',
   };
   for (const row of rows) {
     if (row.key === 'dealsChannelId') config.dealsChannelId = row.value;
+    if (row.key === 'newsChannelId') config.newsChannelId = row.value;
     if (row.key === 'schedule') config.schedule = row.value;
   }
   return config;

@@ -74,6 +74,15 @@ export const help: Command = {
             '`/setup view` — View current bot configuration',
           ].join('\n'),
         },
+        {
+          name: '📰 Admin: News Configuration',
+          value: [
+            '`/news list` - View all news sources and their status',
+            '`/news enable <source>` - Enable a specific news source',
+            '`/news disable <source>` - Disable a specific news source',
+            '\n**Available:** CS2, Valheim, WoW Retail, Classic, PTR, Beta, Blue Tracker, Hotfixes, Guides',
+          ].join('\n'),
+        },
       );
     }
 
