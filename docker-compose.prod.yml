@@ -17,14 +17,15 @@ services:
         condition: service_completed_successfully
 
   migrate:
+    container_name: reudiger-ruediger-migrate
     build:
       context: .
-      target: production
+      target: migrate
     env_file:
       - .env
     environment:
       NODE_ENV: production
-    command: ['node', 'node_modules/drizzle-kit/bin.cjs', 'migrate']
+    command: ['npm', 'run', 'db:migrate']
     depends_on:
       - postgres-db
     restart: 'no'
