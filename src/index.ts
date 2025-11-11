@@ -10,6 +10,7 @@ import {
 import { initializeDiscordLogger, logger } from './utils/logger';
 import {
   checkUserRoleCooldown,
+  getAllRolesInGuild,
   getReactionRoleButton,
   updateUserRoleCooldown,
   type ReactionRoleButton,
@@ -53,10 +54,18 @@ client.on(Events.InteractionCreate, (interaction: Interaction) => {
 
     if (interaction.isButton()) {
       try {
-        // Check if this is a role button from the /roles command
+        // Extract the actual buttonId by removing the prefix if needed
+        let buttonId = interaction.customId;
+
+        // Check if this is from /roles command
         const isRolesCommand = interaction.customId.startsWith('role_button_');
 
-        const buttonData = await getReactionRoleButton(interaction.customId);
+        if (isRolesCommand) {
+          // Strip the 'role_button_' prefix to get the actual buttonId
+          buttonId = interaction.customId.replace('role_button_', '');
+        }
+
+        const buttonData = await getReactionRoleButton(buttonId);
 
         if (!buttonData) {
           await interaction.reply({
@@ -189,9 +198,6 @@ client.on(Events.InteractionCreate, (interaction: Interaction) => {
           const selectedButtonIds = interaction.values;
 
           // Fetch all button data for this guild to get role IDs
-          const { getAllRolesInGuild } = await import(
-            './utils/reactionRoles.js'
-          );
           const allRoles = await getAllRolesInGuild(interaction.guild.id);
 
           // Map selected button IDs to role IDs

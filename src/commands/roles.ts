@@ -25,7 +25,6 @@ export const roles: Command = {
     await interaction.deferReply({ ephemeral: true });
 
     try {
-      // Ensure command is used in a guild
       if (!interaction.guild || !interaction.member) {
         await interaction.editReply({
           content: '❌ This command can only be used in a server.',
@@ -55,9 +54,8 @@ export const roles: Command = {
         return;
       }
 
-      // Get user's current roles from the reaction role system
+      // Get user's current roles
       const userRoles = allRoles.filter((roleButton) => {
-        // Check if member is a GuildMember (type guard)
         if (
           typeof interaction.member === 'object' &&
           interaction.member !== null &&
@@ -75,10 +73,8 @@ export const roles: Command = {
         return false;
       });
 
-      // Filter roles based on requiresExistingRoles logic
       const hasAnyRole = userRoles.length > 0;
       const availableRoles = allRoles.filter((role) => {
-        // Exclude dev role if user has no roles yet
         if (role.requiresExistingRoles && !hasAnyRole) {
           return false;
         }
@@ -98,9 +94,10 @@ export const roles: Command = {
 
       // Build embed
       const embed = new EmbedBuilder()
-        .setTitle('Manage Your Roles')
-        .setColor(0x5865f2) // Discord blurple
-        .setFooter({ text: 'Cooldown: 5 minutes between changes' });
+        .setTitle('🎭 Manage Your Roles')
+        .setDescription('Toggle roles on or off using the buttons below.')
+        .setColor(0x5865f2)
+        .setFooter({ text: '⏱️ Cooldown: 5 minutes between changes' });
 
       // Add fields for each category
       const fields: { name: string; value: string; inline: boolean }[] = [];
@@ -108,61 +105,51 @@ export const roles: Command = {
         const roleList = categoryRoles
           .map((role) => {
             const hasRole = userRoles.some((ur) => ur.roleId === role.roleId);
-            const indicator = hasRole ? '✅' : '⬜';
-            const requiredTag = role.required ? ' 🔒' : '';
-            return `${indicator} ${role.emoji} ${role.label}${requiredTag}`;
+            const statusIcon = hasRole ? '✅' : '⬜';
+            const lockIcon = role.required ? ' 🔒' : '';
+            // Only show emoji and label, not duplicate status
+            return `${statusIcon} ${role.emoji} **${role.label}**${lockIcon}`;
           })
           .join('\n');
 
         fields.push({
-          name: category,
+          name: `${category}`,
           value: roleList || 'No roles',
           inline: false,
         });
       }
       embed.addFields(fields);
 
-      // Decide UI: buttons if ≤5 roles, select menu if >5 roles
       const components: ActionRowBuilder<
         ButtonBuilder | StringSelectMenuBuilder
       >[] = [];
 
       if (availableRoles.length <= 5) {
-        // Use buttons
-        embed.setDescription(
-          'Click the buttons below to toggle roles on or off.',
-        );
-
+        // Use buttons - simplified labels
         const buttons = availableRoles.map((role) => {
           const hasRole = userRoles.some((ur) => ur.roleId === role.roleId);
-          const label = hasRole
-            ? `✅ ${role.emoji} ${role.label}`
-            : `${role.emoji} ${role.label}`;
 
           return new ButtonBuilder()
             .setCustomId(`role_button_${role.buttonId}`)
-            .setLabel(label)
+            .setLabel(role.label) // Just the label, no emojis
+            .setEmoji(role.emoji) // Use Discord's emoji field
             .setStyle(hasRole ? ButtonStyle.Success : ButtonStyle.Secondary)
             .setDisabled(role.required === true);
         });
 
-        // Discord allows max 5 buttons per action row
         const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
           buttons,
         );
         components.push(row);
       } else {
         // Use select menu
-        embed.setDescription(
-          'Use the dropdown menu below to select your roles. You can select multiple roles at once.',
-        );
-
         const options = availableRoles.map((role) => {
           const hasRole = userRoles.some((ur) => ur.roleId === role.roleId);
           return {
-            label: `${role.emoji} ${role.label}`,
+            label: role.label, // Just the label
             value: role.buttonId,
             description: role.category ?? 'Other',
+            emoji: role.emoji, // Use Discord's emoji field
             default: hasRole,
           };
         });
@@ -185,7 +172,6 @@ export const roles: Command = {
         components.push(row);
       }
 
-      // Send the message with embed and components
       await interaction.editReply({
         embeds: [embed],
         components: components,
@@ -199,7 +185,6 @@ export const roles: Command = {
       const errorMessage =
         '❌ Failed to load roles. Please try again later or contact an administrator.';
 
-      // Handle reply based on interaction state
       if (interaction.deferred) {
         await interaction
           .editReply({ content: errorMessage })
