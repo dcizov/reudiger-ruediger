@@ -9,11 +9,7 @@ import { env } from '../config';
 import { db } from '../db/index';
 import { subscriptions, userSettings } from '../db/schema';
 import type { SubcommandCommand } from '../types/command';
-import {
-  getItadEurPrices,
-  getItadGameId,
-  getItadHistoricalLowBatch,
-} from '../utils/itadPrice';
+import { getItadGameId, getItadGameOverview } from '../utils/itadPrice';
 import { searchItadGames } from '../utils/itadSearch';
 
 const MAX_SUBSCRIPTIONS_PER_USER = 20;
@@ -115,7 +111,6 @@ export const subscription: SubcommandCommand = {
     const apiKey = env.ITAD_API_KEY;
     const focused = interaction.options.getFocused();
 
-    // Autocomplete for 'add' and 'update' subcommands
     if (
       (subcommand === 'add' || subcommand === 'update') &&
       apiKey &&
@@ -136,9 +131,6 @@ export const subscription: SubcommandCommand = {
   },
 };
 
-/**
- * Handle /subscription add subcommand
- */
 async function handleAdd(interaction: ChatInputCommandInteraction) {
   const title = interaction.options.getString('title', true);
   const userId = interaction.user.id;
@@ -155,7 +147,6 @@ async function handleAdd(interaction: ChatInputCommandInteraction) {
 
   await interaction.deferReply({ ephemeral: true });
 
-  // Check subscription limit (max 20 per user)
   const userSubscriptions = await db.query.subscriptions.findMany({
     where: eq(subscriptions.userId, userId),
   });
@@ -173,24 +164,17 @@ async function handleAdd(interaction: ChatInputCommandInteraction) {
     return;
   }
 
-  const eurPrices = await getItadEurPrices(apiKey, [gameId]);
-  const price = eurPrices[gameId];
-  if (!price) {
+  const overviewData = await getItadGameOverview(apiKey, [gameId]);
+  const gameData = overviewData[gameId];
+
+  if (!gameData) {
     await interaction.editReply(
-      `❌ Could not fetch current price for "${title}".`,
+      `❌ Could not fetch price data for "${title}".\n` +
+        `The game may not be available in your region or hasn't been released yet.`,
     );
     return;
   }
 
-  const historicalData = await getItadHistoricalLowBatch(apiKey, [gameId]);
-  const historical = historicalData[gameId];
-
-  if (!historical) {
-    await interaction.editReply('❌ Could not fetch historical low.');
-    return;
-  }
-
-  // Check if already subscribed
   const existing = await db.query.subscriptions.findFirst({
     where: and(
       eq(subscriptions.gameId, gameId),
@@ -214,13 +198,23 @@ async function handleAdd(interaction: ChatInputCommandInteraction) {
     username,
     gameId,
     title,
-    historicalLow: Math.round(historical.price * 100),
-    currentPrice: Math.round(price.price_new * 100),
+    historicalLow: Math.round(gameData.historicalLow * 100),
+    currentPrice: Math.round(gameData.currentPrice * 100),
     targetPrice: priceBelow,
     notified: false,
   });
 
-  let reply = `✅ Subscribed to **${title}**.\n\n📉 Current: €${price.price_new.toFixed(2)}\n📈 Historical Low: €${historical.price.toFixed(2)}`;
+  let reply = `✅ Subscribed to **${title}**.\n\n📉 Current: €${gameData.currentPrice.toFixed(2)}`;
+
+  if (gameData.cut > 0) {
+    reply += ` (${gameData.cut}% off, was €${gameData.regularPrice.toFixed(2)})`;
+  }
+
+  reply += `\n📈 Historical Low: €${gameData.historicalLow.toFixed(2)}`;
+
+  if (gameData.isLowest) {
+    reply += ` 🔥 **LOWEST PRICE EVER!**`;
+  }
 
   if (priceBelow) {
     reply += `\n🔔 You will be notified only if the price drops below **€${priceBelowRaw!.toFixed(2)}**.`;
@@ -231,9 +225,6 @@ async function handleAdd(interaction: ChatInputCommandInteraction) {
   await interaction.editReply({ content: reply });
 }
 
-/**
- * Handle /subscription remove subcommand
- */
 async function handleRemove(interaction: ChatInputCommandInteraction) {
   const title = interaction.options.getString('title', true);
   const userId = interaction.user.id;
@@ -261,9 +252,6 @@ async function handleRemove(interaction: ChatInputCommandInteraction) {
   });
 }
 
-/**
- * Handle /subscription clear subcommand
- */
 async function handleClear(interaction: ChatInputCommandInteraction) {
   const userId = interaction.user.id;
 
@@ -287,9 +275,6 @@ async function handleClear(interaction: ChatInputCommandInteraction) {
   });
 }
 
-/**
- * Handle /subscription list subcommand
- */
 async function handleList(interaction: ChatInputCommandInteraction) {
   const subs = await db.query.subscriptions.findMany({
     where: eq(subscriptions.userId, interaction.user.id),
@@ -323,9 +308,6 @@ async function handleList(interaction: ChatInputCommandInteraction) {
   });
 }
 
-/**
- * Handle /subscription update subcommand
- */
 async function handleUpdate(interaction: ChatInputCommandInteraction) {
   const title = interaction.options.getString('title', true);
   const newPrice = interaction.options.getNumber('new_price', true);
@@ -349,7 +331,7 @@ async function handleUpdate(interaction: ChatInputCommandInteraction) {
 
   await db
     .update(subscriptions)
-    .set({ targetPrice: newPriceCents, notified: false }) // reset to re-notify
+    .set({ targetPrice: newPriceCents, notified: false })
     .where(eq(subscriptions.id, sub.id));
 
   await interaction.reply({
@@ -358,9 +340,6 @@ async function handleUpdate(interaction: ChatInputCommandInteraction) {
   });
 }
 
-/**
- * Handle /subscription notify subcommand
- */
 async function handleNotify(interaction: ChatInputCommandInteraction) {
   const userId = interaction.user.id;
 
@@ -368,7 +347,6 @@ async function handleNotify(interaction: ChatInputCommandInteraction) {
     where: eq(userSettings.userId, userId),
   });
 
-  // Flip the current setting
   const newValue = !existing?.notificationsEnabled;
 
   if (existing) {

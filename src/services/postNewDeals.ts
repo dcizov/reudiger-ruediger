@@ -11,19 +11,14 @@ import {
 import { env } from '../config';
 import { getBotConfig } from '../utils/botConfig';
 import { getDeals } from '../utils/cheapshark';
-import {
-  getItadEurPrices,
-  getItadGameId,
-  getItadHistoricalLowBatch,
-} from '../utils/itadPrice';
+import { getItadGameId, getItadGameOverview } from '../utils/itadPrice';
 import { logger } from '../utils/logger';
 import { addPostedDeal, getPostedDealIDs } from '../utils/postedDeals';
 import { storeNames } from '../utils/stores';
 
-// Quality thresholds (based on real-world deal bots)
-const MIN_DISCOUNT_PERCENT = 70; // Only post deals ≥70% off
-const MIN_RATING_FOR_LOWER_DISCOUNT = 7.0; // If rating ≥7, allow ≥50% discount
-const MIN_DISCOUNT_FOR_GOOD_RATING = 50; // Minimum discount for highly-rated games
+const MIN_DISCOUNT_PERCENT = 70;
+const MIN_RATING_FOR_LOWER_DISCOUNT = 7.0;
+const MIN_DISCOUNT_FOR_GOOD_RATING = 50;
 
 function isSendableChannel(
   channel: Channel | null,
@@ -79,7 +74,6 @@ export async function postNewDeals(
     return 0;
   }
 
-  // Batch game ID lookups
   const titleToGameId = new Map<string, string>();
   const CHUNK_SIZE = 10;
 
@@ -98,20 +92,16 @@ export async function postNewDeals(
   );
 
   const gameIDs = Array.from(titleToGameId.values());
-  const eurPrices = await getItadEurPrices(apiKey, gameIDs);
-  logger.info(`💶 Got EUR prices for ${Object.keys(eurPrices).length} games`, {
-    eurPricesCount: Object.keys(eurPrices).length,
-  });
 
-  const historicalData = await getItadHistoricalLowBatch(
+  const gameOverviews = await getItadGameOverview(
     apiKey,
     gameIDs,
     'DE',
     client,
   );
   logger.info(
-    `📊 Got historical data for ${Object.keys(historicalData).length} games`,
-    { historicalDataCount: Object.keys(historicalData).length },
+    `💶 Got complete data for ${Object.keys(gameOverviews).length} games`,
+    { dataCount: Object.keys(gameOverviews).length },
   );
 
   const enriched = newDeals
@@ -119,47 +109,37 @@ export async function postNewDeals(
       const gameId = titleToGameId.get(deal.dealID);
       if (!gameId) return null;
 
-      const eurPrice = eurPrices[gameId];
-      if (!eurPrice) return null;
-
-      const historical = historicalData[gameId] ?? {
-        price: eurPrice.price_new,
-        isLowest: false,
-      };
+      const gameData = gameOverviews[gameId];
+      if (!gameData) return null;
 
       const discount = parseFloat(deal.savings);
       const rating = parseFloat(deal.dealRating ?? '0');
-      const price = eurPrice.price_new;
+      const price = gameData.currentPrice;
 
       const score = discount * 2 + rating - price * 0.3;
 
       return {
         gameId,
         deal,
-        eurPrice,
+        gameData,
         score,
-        historical,
         discount,
         rating,
       };
     })
     .filter((item): item is NonNullable<typeof item> => item !== null);
 
-  // Apply quality filters (based on real-world deal bots)
   const qualityDeals = enriched.filter((item) => {
-    const { discount, rating, historical } = item;
+    const { discount, rating, gameData } = item;
 
-    // Always post historical lows with decent discount
-    if (historical.isLowest && discount >= 50) {
+    if (gameData.isLowest && discount >= 50) {
       return true;
     }
 
-    // High discount deals (≥70%)
     if (discount >= MIN_DISCOUNT_PERCENT) {
       return true;
     }
 
-    // Highly-rated games with good discount (≥50%)
     if (
       rating >= MIN_RATING_FOR_LOWER_DISCOUNT &&
       discount >= MIN_DISCOUNT_FOR_GOOD_RATING
@@ -195,7 +175,7 @@ export async function postNewDeals(
   let posted = 0;
 
   for (const entry of sorted) {
-    const { deal, eurPrice, historical } = entry;
+    const { deal, gameData } = entry;
     const platform = storeNames[deal.storeID] ?? 'Unknown';
     const imageUrl = deal.steamAppID
       ? `https://cdn.cloudflare.steamstatic.com/steam/apps/${deal.steamAppID}/header.jpg`
@@ -205,22 +185,22 @@ export async function postNewDeals(
 
     const embed = new EmbedBuilder()
       .setTitle(`🎮 ${deal.title}`)
-      .setURL(eurPrice.url)
+      .setURL(gameData.url)
       .setImage(imageUrl)
       .setColor(0x00ae86)
       .addFields(
         {
           name: '💰 Sale Price',
-          value: `€${eurPrice.price_new.toFixed(2)}`,
+          value: `€${gameData.currentPrice.toFixed(2)}`,
           inline: true,
         },
         {
           name: '💸 Normal Price',
-          value: `~~€${eurPrice.price_old.toFixed(2)}~~`,
+          value: `~~€${gameData.regularPrice.toFixed(2)}~~`,
           inline: true,
         },
         { name: '📉 Discount', value: `-${savings}`, inline: true },
-        { name: '🏪 Store', value: eurPrice.shop, inline: true },
+        { name: '🏪 Store', value: gameData.shop, inline: true },
         {
           name: '⭐ Rating',
           value: deal.dealRating
@@ -230,13 +210,13 @@ export async function postNewDeals(
         },
         {
           name: '🔗 Links',
-          value: `[🛒 Deal](${eurPrice.url})${deal.steamAppID ? ` • [🎮 Steam](https://store.steampowered.com/app/${deal.steamAppID})` : ''}`,
+          value: `[🛒 Deal](${gameData.url})${deal.steamAppID ? ` • [🎮 Steam](https://store.steampowered.com/app/${deal.steamAppID})` : ''}`,
           inline: false,
         },
         {
           name: '📉 Historical Low',
-          value: `€${historical.price.toFixed(2)} • ${
-            historical.isLowest ? '**New All-Time Low!**' : 'Not lowest'
+          value: `€${gameData.historicalLow.toFixed(2)} • ${
+            gameData.isLowest ? '**New All-Time Low!** 🔥' : 'Not lowest'
           }`,
           inline: true,
         },
@@ -253,18 +233,18 @@ export async function postNewDeals(
       dealId: deal.dealID,
       messageId: message.id,
       title: deal.title,
-      store: eurPrice.shop,
+      store: gameData.shop,
       platform,
-      salePrice: eurPrice.price_new.toFixed(2),
-      normalPrice: eurPrice.price_old.toFixed(2),
+      salePrice: gameData.currentPrice.toFixed(2),
+      normalPrice: gameData.regularPrice.toFixed(2),
       savings,
       dealRating: deal.dealRating,
       imageUrl,
-      url: eurPrice.url,
+      url: gameData.url,
       postedAt: new Date(),
-      postedPrice: eurPrice.price_new,
-      lowestEver: historical.isLowest,
-      historicalLow: historical.price,
+      postedPrice: gameData.currentPrice,
+      lowestEver: gameData.isLowest,
+      historicalLow: gameData.historicalLow,
       expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 6),
     }).catch((err: unknown) => {
       if (err instanceof Error && err.message.includes('duplicate key')) {

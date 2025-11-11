@@ -18,6 +18,17 @@ export interface ItadPrice {
   currency: string;
 }
 
+export interface ItadGameOverview {
+  currentPrice: number;
+  regularPrice: number;
+  historicalLow: number;
+  isLowest: boolean;
+  shop: string;
+  url: string;
+  cut: number;
+  currency: string;
+}
+
 // Helper to redact API key from URLs in logs
 function redactApiKey(url: string): string {
   return url.replace(/key=[^&]+/, 'key=[REDACTED]');
@@ -66,6 +77,89 @@ export async function getItadGameId(
   }
 }
 
+/**
+ * Get comprehensive game data including current price, historical low, and shop info.
+ * This is the primary function for fetching game price data.
+ * Uses the /games/overview/v2 endpoint which is more reliable than /games/prices/v2.
+ */
+export async function getItadGameOverview(
+  apiKey: string,
+  gameIds: string[],
+  country = 'DE',
+  _client?: Client,
+): Promise<Record<string, ItadGameOverview>> {
+  if (gameIds.length === 0) return {};
+
+  const url = `https://api.isthereanydeal.com/games/overview/v2?key=${apiKey}&country=${country}`;
+
+  try {
+    const res = await fetchWithRetry(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(gameIds),
+    });
+
+    if (!res.ok) {
+      logger.warn(
+        `ITAD overview batch failed: ${res.status} ${redactApiKey(url)}`,
+        { status: res.status, gameIdsCount: gameIds.length },
+      );
+      return {};
+    }
+
+    const rawData: unknown = await res.json();
+    const result = ItadOverviewResponseSchema.safeParse(rawData);
+
+    if (!result.success) {
+      logger.error(`ITAD API schema validation failed`, {
+        error: z.treeifyError(result.error),
+      });
+      return {};
+    }
+
+    const data = result.data;
+    const overview: Record<string, ItadGameOverview> = {};
+
+    for (const gameData of data.prices) {
+      const currentPrice = gameData.current.price.amount;
+      const regularPrice = gameData.current.regular.amount;
+      const historicalLow = gameData.lowest.price.amount;
+
+      overview[gameData.id] = {
+        currentPrice,
+        regularPrice,
+        historicalLow,
+        isLowest: currentPrice <= historicalLow,
+        shop: gameData.current.shop.name,
+        url: gameData.current.url,
+        cut: gameData.current.cut,
+        currency: gameData.current.price.currency,
+      };
+    }
+
+    logger.info(
+      `Successfully got overview data for ${Object.keys(overview).length}/${gameIds.length} games`,
+      {
+        successCount: Object.keys(overview).length,
+        totalGames: gameIds.length,
+      },
+    );
+
+    return overview;
+  } catch (error) {
+    logger.error(
+      `ITAD overview batch error: ${error instanceof Error ? error.message : String(error)}`,
+      { error },
+    );
+    return {};
+  }
+}
+
+/**
+ * @deprecated Use getItadGameOverview instead. This endpoint may return empty results
+ * for certain games (pre-orders, special listings, etc.) even when they have valid prices.
+ * Kept for backward compatibility.
+ */
 export async function getItadEurPrices(
   apiKey: string,
   gameIds: string[],
@@ -122,73 +216,26 @@ export async function getItadEurPrices(
   }
 }
 
+/**
+ * @deprecated Use getItadGameOverview instead. This function now just calls getItadGameOverview
+ * and transforms the data for backward compatibility.
+ */
 export async function getItadHistoricalLowBatch(
   apiKey: string,
   gameIds: string[],
   country = 'DE',
   _client?: Client,
 ): Promise<Record<string, { price: number; isLowest: boolean }>> {
-  if (gameIds.length === 0) return {};
+  const overview = await getItadGameOverview(apiKey, gameIds, country, _client);
 
-  const url = `https://api.isthereanydeal.com/games/overview/v2?key=${apiKey}&country=${country}`;
+  const result: Record<string, { price: number; isLowest: boolean }> = {};
 
-  try {
-    const res = await fetchWithRetry(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(gameIds),
-    });
-
-    if (!res.ok) {
-      logger.warn(`⚠️ ITAD API error: HTTP ${res.status}`, {
-        status: res.status,
-      });
-      logger.error(
-        `ITAD overview batch failed: ${res.status} ${redactApiKey(url)}`,
-        { status: res.status, gameIdsCount: gameIds.length },
-      );
-      return {};
-    }
-
-    const rawData: unknown = await res.json();
-    const result = ItadOverviewResponseSchema.safeParse(rawData);
-
-    if (!result.success) {
-      const errors = result.error.issues
-        .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
-        .join('\n');
-      logger.error(`🚨 ITAD API schema validation failed:\n${errors}`, {
-        error: z.treeifyError(result.error),
-      });
-      return {};
-    }
-
-    const data = result.data;
-    const historical: Record<string, { price: number; isLowest: boolean }> = {};
-
-    for (const gameData of data.prices) {
-      const currentPrice = gameData.current.price.amount;
-      const historicalLow = gameData.lowest.price.amount;
-
-      historical[gameData.id] = {
-        price: historicalLow,
-        isLowest: currentPrice <= historicalLow,
-      };
-    }
-
-    logger.info(
-      `Successfully got historical data for ${Object.keys(historical).length}/${gameIds.length} games`,
-      {
-        historicalCount: Object.keys(historical).length,
-        totalGames: gameIds.length,
-      },
-    );
-    return historical;
-  } catch (error) {
-    logger.error(
-      `❌ ITAD historical batch error: ${error instanceof Error ? error.message : String(error)}`,
-      { error },
-    );
-    return {};
+  for (const [gameId, data] of Object.entries(overview)) {
+    result[gameId] = {
+      price: data.historicalLow,
+      isLowest: data.isLowest,
+    };
   }
+
+  return result;
 }

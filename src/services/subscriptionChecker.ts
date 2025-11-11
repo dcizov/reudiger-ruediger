@@ -4,7 +4,7 @@ import { eq, inArray } from 'drizzle-orm';
 import { env } from '../config';
 import { db } from '../db/index';
 import { subscriptions, userSettings } from '../db/schema';
-import { getItadEurPrices } from '../utils/itadPrice';
+import { getItadGameOverview } from '../utils/itadPrice';
 
 export async function checkSubscriptionsAndNotify(
   client: Client,
@@ -18,7 +18,6 @@ export async function checkSubscriptionsAndNotify(
   const allSubs = await db.select().from(subscriptions);
   if (!allSubs.length) return 0;
 
-  // Fix: Fetch all user settings at once to avoid N+1 queries
   const userIds = [...new Set(allSubs.map((s) => s.userId))];
   const allSettings = await db.query.userSettings.findMany({
     where: inArray(userSettings.userId, userIds),
@@ -39,14 +38,13 @@ export async function checkSubscriptionsAndNotify(
   const notifiedUserIds: number[] = [];
 
   for (const [gameId, subsForGame] of groupedByGame.entries()) {
-    const eurPrices = await getItadEurPrices(apiKey, [gameId]);
-    const priceInfo = eurPrices[gameId];
-    if (!priceInfo) continue;
+    const gameOverviews = await getItadGameOverview(apiKey, [gameId]);
+    const gameData = gameOverviews[gameId];
+    if (!gameData) continue;
 
-    const currentPriceInCents = Math.round(priceInfo.price_new * 100);
+    const currentPriceInCents = Math.round(gameData.currentPrice * 100);
 
     for (const sub of subsForGame) {
-      // Fix: Use Map lookup instead of database query
       const notificationsEnabled = settingsMap.get(sub.userId) ?? true;
       if (!notificationsEnabled) continue;
 
@@ -78,12 +76,12 @@ export async function checkSubscriptionsAndNotify(
 
       const dmContent = `🔔 **Price Drop for _${sub.title}_!**
 
-💰 New Price: €${priceInfo.price_new.toFixed(2)}
+💰 New Price: €${gameData.currentPrice.toFixed(2)}${gameData.cut > 0 ? ` (${gameData.cut}% off)` : ''}
 💸 Previous: €${(storedPrice / 100).toFixed(2)}
 🎯 Target: ${sub.targetPrice ? `€${(sub.targetPrice / 100).toFixed(2)}` : 'Any drop'}
 📉 Savings vs historical: ${savings}%
-🏪 Store: ${priceInfo.shop}
-🔗 ${priceInfo.url}`;
+🏪 Store: ${gameData.shop}
+${gameData.isLowest ? '🔥 **NEW ALL-TIME LOW!**\n' : ''}🔗 ${gameData.url}`;
 
       await user.send({ content: dmContent }).catch(() => null);
 

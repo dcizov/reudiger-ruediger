@@ -7,11 +7,7 @@ import {
 
 import { env } from '../config';
 import type { Command } from '../types/command';
-import {
-  getItadEurPrices,
-  getItadGameId,
-  getItadHistoricalLowBatch, // Changed from getItadHistoricalLow
-} from '../utils/itadPrice';
+import { getItadGameId, getItadGameOverview } from '../utils/itadPrice';
 import { searchItadGames } from '../utils/itadSearch';
 
 export const compare: Command = {
@@ -46,57 +42,47 @@ export const compare: Command = {
       return;
     }
 
-    const eurPrices = await getItadEurPrices(apiKey, [gameId]);
-    const price = eurPrices[gameId];
-    if (!price) {
-      await interaction.editReply(`❌ No price data found for "${title}".`);
+    const overviewData = await getItadGameOverview(apiKey, [gameId]);
+    const gameData = overviewData[gameId];
+
+    if (!gameData) {
+      await interaction.editReply(
+        `❌ No price data found for "${title}".\n` +
+          `The game may not be available in your region or hasn't been released yet.`,
+      );
       return;
     }
-
-    // Changed to use batch version
-    const historicalData = await getItadHistoricalLowBatch(apiKey, [gameId]);
-    const historical = historicalData[gameId];
-
-    if (!historical) {
-      await interaction.editReply('❌ Failed to fetch historical low.');
-      return;
-    }
-
-    const savingsPercent = (
-      ((price.price_old - price.price_new) / price.price_old) *
-      100
-    ).toFixed(0);
 
     const embed = new EmbedBuilder()
       .setTitle(`🎮 ${title}`)
-      .setURL(price.url)
+      .setURL(gameData.url)
       .setColor(0x00ae86)
       .addFields(
         {
           name: '💰 Current Price',
-          value: `€${price.price_new.toFixed(2)}`,
+          value: `€${gameData.currentPrice.toFixed(2)}`,
           inline: true,
         },
         {
           name: '💸 Normal Price',
-          value: `~~€${price.price_old.toFixed(2)}~~`,
+          value: `~~€${gameData.regularPrice.toFixed(2)}~~`,
           inline: true,
         },
         {
           name: '📉 Discount',
-          value: `-${savingsPercent}%`,
+          value: gameData.cut > 0 ? `-${gameData.cut}%` : 'No discount',
           inline: true,
         },
         {
           name: '📉 Historical Low',
-          value: `€${historical.price.toFixed(2)} • ${
-            historical.isLowest ? '**New all-time low!**' : 'Not lowest'
+          value: `€${gameData.historicalLow.toFixed(2)} • ${
+            gameData.isLowest ? '**New all-time low!** 🔥' : 'Not lowest'
           }`,
           inline: true,
         },
         {
           name: '🏪 Best Store',
-          value: price.shop,
+          value: gameData.shop,
           inline: true,
         },
         {
@@ -106,7 +92,7 @@ export const compare: Command = {
         },
         {
           name: '🔗 Links',
-          value: `[🛒 Open Deal](${price.url})`,
+          value: `[🛒 Open Deal](${gameData.url})`,
           inline: false,
         },
       )

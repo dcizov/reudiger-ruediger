@@ -11,6 +11,11 @@ const ShopSchema = z.object({
   name: z.string(),
 });
 
+const PlatformSchema = z.object({
+  id: z.number(),
+  name: z.string(),
+});
+
 export const ItadLookupResponseSchema = z.object({
   found: z.boolean(),
   game: z
@@ -42,15 +47,31 @@ export const ItadOverviewResponseSchema = z.object({
         shop: ShopSchema,
         price: PriceDetailSchema,
         regular: PriceDetailSchema,
+        cut: z.number(),
+        voucher: z.string().nullable(),
+        flag: z.string().optional(),
+        drm: z.array(z.unknown()),
+        platforms: z.array(PlatformSchema),
+        timestamp: z.string(),
+        expiry: z.string().nullable(),
         url: z.string(),
       }),
       lowest: z.object({
         shop: ShopSchema,
         price: PriceDetailSchema,
-        url: z.string().optional(),
+        regular: PriceDetailSchema,
+        cut: z.number(),
+        timestamp: z.string(),
       }),
+      bundled: z.number().optional(),
+      urls: z
+        .object({
+          game: z.string(),
+        })
+        .optional(),
     }),
   ),
+  bundles: z.array(z.unknown()).optional(),
 });
 
 export type ItadLookupResponse = z.infer<typeof ItadLookupResponseSchema>;
