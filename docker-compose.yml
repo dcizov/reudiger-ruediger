@@ -7,6 +7,8 @@ services:
     restart: unless-stopped
     depends_on:
       - postgres-db
+    networks:
+      - reudiger-network
 
   postgres-db:
     container_name: '${DATABASE_NAME:-sample-bot}-postgres'
@@ -15,12 +17,16 @@ services:
       POSTGRES_USER: '${DATABASE_USER:-postgres}'
       POSTGRES_PASSWORD: '${DATABASE_PASSWORD:-password}'
       POSTGRES_DB: '${DATABASE_NAME:-sample-bot}'
-    ports:
-      - '5432:5432'
     volumes:
       - pgdata:/var/lib/postgresql/data
     restart: unless-stopped
+    networks:
+      - reudiger-network
 
 volumes:
   pgdata:
     name: '${DATABASE_NAME:-sample-bot}-pgdata'
+
+networks:
+  reudiger-network:
+    driver: bridge

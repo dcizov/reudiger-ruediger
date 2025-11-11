@@ -15,6 +15,8 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
+    networks:
+      - reudiger-network
 
   migrate:
     container_name: reudiger-ruediger-migrate
@@ -29,8 +31,12 @@ services:
     depends_on:
       - postgres-db
     restart: 'no'
+    networks:
+      - reudiger-network
 
   postgres-db:
     container_name: '${DATABASE_NAME}-postgres-prod'
     ports: []
     restart: always
+    networks:
+      - reudiger-network
