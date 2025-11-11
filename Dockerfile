@@ -16,7 +16,7 @@ FROM base AS builder
 
 COPY package.json package-lock.json ./
 
-RUN npm ci --omit=dev --ignore-scripts
+RUN npm ci --ignore-scripts
 
 COPY tsup.config.ts tsconfig.json ./
 COPY src ./src
