@@ -49,7 +49,7 @@ export const ItadOverviewResponseSchema = z.object({
         regular: PriceDetailSchema,
         cut: z.number(),
         voucher: z.string().nullable(),
-        flag: z.string().optional(),
+        flag: z.string().nullish(),
         drm: z.array(z.unknown()),
         platforms: z.array(PlatformSchema),
         timestamp: z.string(),
