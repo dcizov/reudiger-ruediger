@@ -20,7 +20,11 @@ import { logger } from '../utils/logger';
 import { addPostedDeal, getPostedDealIDs } from '../utils/postedDeals';
 import { storeNames } from '../utils/stores';
 
-// Fix: Remove 'any' types with proper type checking
+// Quality thresholds (based on real-world deal bots)
+const MIN_DISCOUNT_PERCENT = 70; // Only post deals ≥70% off
+const MIN_RATING_FOR_LOWER_DISCOUNT = 7.0; // If rating ≥7, allow ≥50% discount
+const MIN_DISCOUNT_FOR_GOOD_RATING = 50; // Minimum discount for highly-rated games
+
 function isSendableChannel(
   channel: Channel | null,
 ): channel is
@@ -29,12 +33,9 @@ function isSendableChannel(
   | PublicThreadChannel
   | PrivateThreadChannel {
   if (!channel) return false;
-
-  // Use 'in' operator for type checking instead of 'any'
   if (!('send' in channel)) return false;
   if (typeof channel.send !== 'function') return false;
   if (!('messages' in channel)) return false;
-
   return true;
 }
 
@@ -78,9 +79,9 @@ export async function postNewDeals(
     return 0;
   }
 
-  // Batch game ID lookups in chunks for better performance
+  // Batch game ID lookups
   const titleToGameId = new Map<string, string>();
-  const CHUNK_SIZE = 10; // Process 10 games at a time
+  const CHUNK_SIZE = 10;
 
   for (let i = 0; i < newDeals.length; i += CHUNK_SIZE) {
     const chunk = newDeals.slice(i, i + CHUNK_SIZE);
@@ -138,21 +139,64 @@ export async function postNewDeals(
         eurPrice,
         score,
         historical,
+        discount,
+        rating,
       };
     })
     .filter((item): item is NonNullable<typeof item> => item !== null);
 
-  const sorted = enriched.sort((a, b) => b.score - a.score).slice(0, maxDeals);
+  // Apply quality filters (based on real-world deal bots)
+  const qualityDeals = enriched.filter((item) => {
+    const { discount, rating, historical } = item;
 
-  logger.info(`✅ Enriched and scored ${sorted.length} deals ready to post`, {
+    // Always post historical lows with decent discount
+    if (historical.isLowest && discount >= 50) {
+      return true;
+    }
+
+    // High discount deals (≥70%)
+    if (discount >= MIN_DISCOUNT_PERCENT) {
+      return true;
+    }
+
+    // Highly-rated games with good discount (≥50%)
+    if (
+      rating >= MIN_RATING_FOR_LOWER_DISCOUNT &&
+      discount >= MIN_DISCOUNT_FOR_GOOD_RATING
+    ) {
+      return true;
+    }
+
+    return false;
+  });
+
+  logger.info(
+    `🔍 Filtered to ${qualityDeals.length} quality deals (from ${enriched.length} enriched)`,
+    {
+      qualityCount: qualityDeals.length,
+      totalEnriched: enriched.length,
+      minDiscount: MIN_DISCOUNT_PERCENT,
+    },
+  );
+
+  if (qualityDeals.length === 0) {
+    logger.info('📭 No quality deals to post this time');
+    return 0;
+  }
+
+  const sorted = qualityDeals
+    .sort((a, b) => b.score - a.score)
+    .slice(0, maxDeals);
+
+  logger.info(`✅ Posting top ${sorted.length} quality deals`, {
     sortedCount: sorted.length,
   });
 
   let posted = 0;
 
   for (const entry of sorted) {
-    const { deal, eurPrice, historical } = entry; // Fix: Remove unused gameId
-    const platform = storeNames[deal.storeID] ?? 'Unknown'; // Fix: Use ?? instead of ||
+    const { deal, eurPrice, historical } = entry;
+    const platform = storeNames[deal.storeID] ?? 'Unknown';
     const imageUrl = deal.steamAppID
       ? `https://cdn.cloudflare.steamstatic.com/steam/apps/${deal.steamAppID}/header.jpg`
       : deal.thumb;
@@ -205,7 +249,6 @@ export async function postNewDeals(
 
     const message = await channel.send({ embeds: [embed] });
 
-    // Fix: Properly type check the error
     await addPostedDeal({
       dealId: deal.dealID,
       messageId: message.id,
@@ -224,9 +267,7 @@ export async function postNewDeals(
       historicalLow: historical.price,
       expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 6),
     }).catch((err: unknown) => {
-      // Fix: Properly check error type
       if (err instanceof Error && err.message.includes('duplicate key')) {
-        // Silently ignore duplicate key errors
         return;
       }
       throw err;
