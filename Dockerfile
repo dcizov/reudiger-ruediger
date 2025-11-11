@@ -34,6 +34,10 @@ FROM base AS production
 RUN addgroup -S nodejs && adduser -S nodejs -G nodejs
 
 COPY --from=deps --chown=nodejs:nodejs /app/node_modules ./node_modules
+
+COPY --from=builder --chown=nodejs:nodejs /app/node_modules/drizzle-kit ./node_modules/drizzle-kit
+COPY --from=builder --chown=nodejs:nodejs /app/node_modules/.bin/drizzle-kit ./node_modules/.bin/drizzle-kit
+
 COPY --from=builder --chown=nodejs:nodejs /app/dist ./dist
 COPY --from=builder --chown=nodejs:nodejs /app/package.json ./package.json
 
