@@ -21,7 +21,7 @@ services:
       context: .
       target: production
     env_file:
-      - .env.production
+      - .env
     environment:
       NODE_ENV: production
     command: ['node', 'node_modules/drizzle-kit/bin.cjs', 'migrate']
