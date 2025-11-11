@@ -9,6 +9,25 @@ services:
     volumes: []
     command: ['node', 'dist/index.js']
     restart: always
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  migrate:
+    build:
+      context: .
+      target: production
+    env_file:
+      - .env.production
+    environment:
+      NODE_ENV: production
+    command: ['node', 'node_modules/drizzle-kit/bin.cjs', 'migrate']
+    depends_on:
+      - postgres-db
+    restart: 'no'
 
   postgres-db:
     container_name: '${DATABASE_NAME}-postgres-prod'
