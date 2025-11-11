@@ -1,6 +1,7 @@
 import {
   ChatInputCommandInteraction,
   EmbedBuilder,
+  PermissionFlagsBits,
   SlashCommandBuilder,
 } from 'discord.js';
 
@@ -12,57 +13,81 @@ export const help: Command = {
     .setDescription('Show help and list all available commands'),
 
   async execute(interaction: ChatInputCommandInteraction) {
+    const isAdmin =
+      interaction.memberPermissions?.has(PermissionFlagsBits.Administrator) ??
+      false;
+
     const embed = new EmbedBuilder()
       .setTitle('🆘 Help • Game Deals Bot')
       .setDescription("Here's what I can do 👇")
-      .setColor(0x00ae86)
-      .addFields(
+      .setColor(0x00ae86);
+
+    embed.addFields(
+      {
+        name: '📉 Game Price Lookup',
+        value:
+          '`/compare <title>` — Compare current price with historical lowest',
+      },
+      {
+        name: '🔔 Subscriptions',
+        value: [
+          "`/subscription add <title> [price_below]` — Track a game and get alerts when it's cheaper",
+          "`/subscription list` — List all games you're tracking",
+          '`/subscription remove <title>` — Stop tracking a specific game',
+          '`/subscription clear` — Remove all tracked games',
+          '`/subscription update <title> <new_price>` — Update your alert price',
+          '`/subscription notify` — Toggle all subscription alerts on or off',
+        ].join('\n'),
+      },
+      {
+        name: '📊 Deal Quality Filters',
+        value: [
+          '• Posts only deals **≥70% off** OR',
+          '• **Historical all-time lows** (≥50% off) OR',
+          '• **Highly-rated games** (≥7.0 rating) with ≥50% discount',
+          '• Maximum 5 best deals per posting session',
+          '• Automated posts: **9 AM, 3 PM, 9 PM** daily',
+        ].join('\n'),
+      },
+      {
+        name: '💬 Target Price Feature',
+        value:
+          'When subscribing, you can choose to only be alerted when a game drops below a specific price.\nFor example:\n`/subscription add title: Cyberpunk 2077 price_below: 19.99`',
+      },
+    );
+
+    if (isAdmin) {
+      embed.addFields(
         {
-          name: '🎯 Deal Posting',
+          name: '⚙️ Admin: Deal Management',
           value: [
-            '`/deal` — Post the top new game deals',
+            '`/deal` — Manually post deals (bypasses schedule)',
             '`/cleanup` — Remove expired deal messages',
           ].join('\n'),
         },
         {
-          name: '📉 Compare Game Price',
-          value:
-            '`/compare <title>` — Compare current deal with historical lowest price',
-        },
-        {
-          name: '🔔 Subscriptions',
-          value: [
-            "`/subscription add <title> [price_below]` — Track a game and get alerts when it's cheaper",
-            "`/subscription list` — List all games you're tracking",
-            '`/subscription remove <title>` — Stop tracking a specific game',
-            '`/subscription clear` — Remove all tracked games',
-            '`/subscription update <title> <new_price>` — Update your alert price for a tracked game',
-            '`/subscription notify` — Toggle all subscription alerts on or off',
-          ].join('\n'),
-        },
-        {
-          name: '⚙️ Admin Setup (Administrator only)',
+          name: '⚙️ Admin: Bot Setup',
           value: [
             '`/setup channels <deals> [log]` — Configure where to post deals and logs',
-            '`/setup roles <channel> <role1...>` — Create a reaction role message with buttons',
-            '`/setup schedule <cron>` — Set the cron schedule for automated deal posting',
+            '`/setup roles <channel> <role1...>` — Create reaction role message with buttons',
+            '`/setup schedule <cron>` — Set posting schedule (default: 9 AM, 3 PM, 9 PM)',
             '`/setup view` — View current bot configuration',
           ].join('\n'),
         },
-        {
-          name: '💬 Target Price Feature',
-          value:
-            'When subscribing, you can choose to only be alerted when a game drops below a specific price.\nFor example:\n`/subscription add title: Cyberpunk 2077 price_below: 19.99`',
-        },
-        {
-          name: '🙋 Questions?',
-          value: 'Ask your server admin or type `/help` anytime!',
-        },
-      )
-      .setFooter({
-        text: 'Game Deals Bot • Powered by IsThereAnyDeal.com & CheapShark',
-        iconURL: 'https://isthereanydeal.com/assets/favicon.png',
-      });
+      );
+    }
+
+    embed.addFields({
+      name: '🙋 Questions?',
+      value: isAdmin
+        ? 'You have **Administrator** permissions and can see all commands above!'
+        : 'Ask your server admin or type `/help` anytime!',
+    });
+
+    embed.setFooter({
+      text: 'Game Deals Bot • Powered by IsThereAnyDeal.com & CheapShark',
+      iconURL: 'https://isthereanydeal.com/assets/favicon.png',
+    });
 
     await interaction.reply({ embeds: [embed], ephemeral: true });
   },
