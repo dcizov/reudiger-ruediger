@@ -41,6 +41,10 @@ export async function setDealsChannelId(channelId: string): Promise<void> {
   await setConfigValue('dealsChannelId', channelId);
 }
 
+export async function setNewsChannelId(channelId: string): Promise<void> {
+  await setConfigValue('newsChannelId', channelId);
+}
+
 export async function setSchedule(schedule: string): Promise<void> {
   await setConfigValue('schedule', schedule);
 }

@@ -18,6 +18,7 @@ import {
   getLogChannelId,
   setDealsChannelId,
   setLogChannelId,
+  setNewsChannelId,
   setSchedule,
 } from '../utils/botConfig';
 import { logger } from '../utils/logger';
@@ -34,13 +35,20 @@ export const setup: SubcommandCommand = {
     .addSubcommand((subcommand) =>
       subcommand
         .setName('channels')
-        .setDescription('Configure deals and log channels')
+        .setDescription('Configure deals, news, and log channels')
         .addChannelOption((option) =>
           option
             .setName('deals_channel')
             .setDescription('📢 Where to post game deals')
             .addChannelTypes(ChannelType.GuildText)
             .setRequired(true),
+        )
+        .addChannelOption((option) =>
+          option
+            .setName('news_channel')
+            .setDescription('📰 Where to post game news updates')
+            .addChannelTypes(ChannelType.GuildText)
+            .setRequired(false),
         )
         .addChannelOption((option) =>
           option
@@ -209,11 +217,17 @@ export const setup: SubcommandCommand = {
  */
 async function handleChannels(interaction: ChatInputCommandInteraction) {
   const dealsChannel = interaction.options.getChannel('deals_channel', true);
+  const newsChannel = interaction.options.getChannel('news_channel', false);
   const logChannel = interaction.options.getChannel('log_channel', false);
 
   await setDealsChannelId(dealsChannel.id);
 
   let message = `✅ Deal channel set to <#${dealsChannel.id}>`;
+
+  if (newsChannel) {
+    await setNewsChannelId(newsChannel.id);
+    message += `\n📰 News channel set to <#${newsChannel.id}>`;
+  }
 
   if (logChannel) {
     await setLogChannelId(logChannel.id);
@@ -375,6 +389,13 @@ async function handleView(interaction: ChatInputCommandInteraction) {
         name: '📢 Deals Channel',
         value: config.dealsChannelId
           ? `<#${config.dealsChannelId}>`
+          : '❌ Not configured',
+        inline: true,
+      },
+      {
+        name: '📰 News Channel',
+        value: config.newsChannelId
+          ? `<#${config.newsChannelId}>`
           : '❌ Not configured',
         inline: true,
       },
