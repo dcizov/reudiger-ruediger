@@ -7,7 +7,7 @@
     "dev:docker": "./start-dev.sh",
     "dev:db": "./start-dev.sh",
     "start": "node dist/index.js",
-    "build": "tsup src/index.ts --minify",
+    "build": "tsup src/index.ts --minify --dts --out-dir dist",
     "check": "npm run lint && npm run typecheck",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
@@ -19,7 +19,7 @@
     "format:write": "prettier --write \"src/**/*.{ts,js,md,mdx}\" --cache --ignore-path .prettierignore",
     "typecheck": "tsc --noEmit",
     "deploy": "tsx src/deploy-commands.ts",
-    "prepare": "is-ci || husky"
+    "prepare": "husky"
   },
   "dependencies": {
     "body-parser": "^2.2.0",
@@ -49,7 +49,6 @@
     "eslint-plugin-drizzle": "^0.2.3",
     "eslint-plugin-prettier": "^5.5.4",
     "husky": "^9.1.7",
-    "is-ci": "^3.0.1",
     "lint-staged": "^16.2.6",
     "prettier": "^3.6.2",
     "tsup": "^8.5.0",
