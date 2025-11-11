@@ -1,4 +1,5 @@
 import {
+  PermissionFlagsBits,
   SlashCommandBuilder,
   type ChatInputCommandInteraction,
 } from 'discord.js';
@@ -10,24 +11,29 @@ import { logger } from '../utils/logger';
 export const deal: Command = {
   data: new SlashCommandBuilder()
     .setName('deal')
-    .setDescription('Post the latest game deals in the configured channel'),
+    .setDescription('Admin: Manually trigger deal posting (bypasses schedule)')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
   async execute(interaction: ChatInputCommandInteraction) {
     await interaction.deferReply({ ephemeral: true });
     try {
       const posted = await postNewDeals(interaction.client, 5);
       if (posted > 0) {
         await interaction.editReply(
-          `✅ Posted ${posted} new deal(s) in the configured channel.`,
+          `✅ Manually posted ${posted} new deal(s) in the configured channel.`,
         );
       } else {
-        await interaction.editReply('No new deals to post.');
+        await interaction.editReply(
+          '📭 No new quality deals found at this time.\n\n**Possible reasons:**\n• All current deals already posted\n• No deals meet quality filters (≥70% off)\n• Try again in a few hours',
+        );
       }
     } catch (err) {
       logger.error(
         `❌ Error in /deal command: ${err instanceof Error ? err.message : String(err)}`,
         { error: err },
       );
-      await interaction.editReply('Failed to post deals due to an error.');
+      await interaction.editReply(
+        '❌ Failed to post deals. Check bot permissions in the deals channel.',
+      );
     }
   },
 };
