@@ -12,7 +12,7 @@ export async function getBotConfig(): Promise<BotConfig> {
   const rows = await db.select().from(botConfig);
   const config: BotConfig = {
     dealsChannelId: '',
-    schedule: '0 10 * * *',
+    schedule: '*/30 * * * *',
   };
   for (const row of rows) {
     if (row.key === 'dealsChannelId') config.dealsChannelId = row.value;
@@ -42,7 +42,7 @@ export async function setSchedule(schedule: string): Promise<void> {
   await setConfigValue('schedule', schedule);
 }
 
-export async function setLogChannelId(channelId: string) {
+export async function setLogChannelId(channelId: string): Promise<void> {
   await db
     .insert(botConfig)
     .values({ key: 'logChannelId', value: channelId })

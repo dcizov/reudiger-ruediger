@@ -28,7 +28,7 @@ const client = new Client({
 function handleReady(readyClient: Client<true>): void {
   logger.info(`✅ Discord bot is ready! Logged in as ${readyClient.user.tag}`);
   initializeDiscordLogger(client);
-  startDealScheduler(client);
+  void startDealScheduler(client);
 }
 
 client.once(Events.ClientReady, handleReady);
@@ -287,7 +287,7 @@ client.on(Events.InteractionCreate, (interaction: Interaction) => {
         await command.execute(interaction);
 
         if (interaction.commandName === 'setup') {
-          startDealScheduler(client);
+          void startDealScheduler(client);
         }
       } catch (error) {
         logger.error(`❌ Error executing command ${interaction.commandName}:`, {

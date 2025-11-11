@@ -1,6 +1,7 @@
 import type { Client } from 'discord.js';
 import cron, { type ScheduledTask } from 'node-cron';
 
+import { getBotConfig } from '../utils/botConfig';
 import { logger } from '../utils/logger';
 import { cleanupExpiredDeals } from './cleanupDeals';
 import { postNewDeals } from './postNewDeals';
@@ -10,13 +11,15 @@ let currentTask: ScheduledTask | null = null;
 let cleanupTask: ScheduledTask | null = null;
 let subscriptionTask: ScheduledTask | null = null;
 
-export function startDealScheduler(client: Client): void {
-  // Fix: stop() returns a promise in node-cron, need to handle it
+export async function startDealScheduler(client: Client): Promise<void> {
   if (currentTask) void currentTask.stop();
   if (cleanupTask) void cleanupTask.stop();
   if (subscriptionTask) void subscriptionTask.stop();
 
-  currentTask = cron.schedule('*/30 * * * *', () => {
+  const config = await getBotConfig();
+  const dealSchedule = config.schedule || '*/30 * * * *'; // Fallback to 30 mins
+
+  currentTask = cron.schedule(dealSchedule, () => {
     void (async () => {
       const posted = await postNewDeals(client, 5);
       if (posted > 0) logger.info(`Posted ${posted} new deal(s).`, { posted });
@@ -42,7 +45,7 @@ export function startDealScheduler(client: Client): void {
   });
 
   logger.info(
-    'Scheduler started: Deals every 30m, cleanup hourly, subscription check every 15m.',
+    `Scheduler started: Deals on schedule '${dealSchedule}', cleanup hourly, subscription check every 15m.`,
   );
 }
 
