@@ -1,5 +1,11 @@
 import type { InteractionReplyOptions, MessagePayload } from 'discord.js';
-import { Client, Events, GatewayIntentBits, Interaction } from 'discord.js';
+import {
+  ActivityType,
+  Client,
+  Events,
+  GatewayIntentBits,
+  Interaction,
+} from 'discord.js';
 
 import { commands } from './commands';
 import { env, isDev } from './config';
@@ -28,6 +34,20 @@ const client = new Client({
 
 function handleReady(readyClient: Client<true>): void {
   logger.info(`✅ Discord bot is ready! Logged in as ${readyClient.user.tag}`);
+
+  // Set bot status
+  readyClient.user.setPresence({
+    activities: [
+      {
+        name: '/help for commands',
+        type: ActivityType.Playing,
+      },
+    ],
+    status: 'online',
+  });
+
+  logger.info('🎮 Bot status set: Playing /help for commands');
+
   initializeDiscordLogger(client);
   void startDealScheduler(client);
 }
