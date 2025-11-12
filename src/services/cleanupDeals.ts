@@ -27,7 +27,10 @@ function isSendableChannel(
   return true;
 }
 
-export async function cleanupExpiredDeals(client: Client): Promise<number> {
+export async function cleanupExpiredDeals(
+  client: Client,
+  isManual = false,
+): Promise<number> {
   const config = await getBotConfig();
   const postedDeals = await getPostedDeals();
   const now = new Date();
@@ -55,6 +58,13 @@ export async function cleanupExpiredDeals(client: Client): Promise<number> {
     }
     await removePostedDeal(deal.dealId);
     removed++;
+  }
+
+  if (removed > 0) {
+    logger.info(
+      `🧹 Cleaned up ${removed} expired deal(s)${isManual ? ' (manual)' : ' (scheduled)'}`,
+      { removed, isManual },
+    );
   }
 
   return removed;
