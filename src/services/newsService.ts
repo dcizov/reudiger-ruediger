@@ -91,7 +91,6 @@ function extractImageFromDescription(description: string): string | undefined {
 
   const allMatches: string[] = [];
 
-  // 1. Try standard img src
   const imgRegex = /<img[^>]+src=["']([^"'>]+)["'][^>]*>/gi;
   let match: RegExpExecArray | null;
   while ((match = imgRegex.exec(description)) !== null) {
@@ -101,7 +100,6 @@ function extractImageFromDescription(description: string): string | undefined {
     }
   }
 
-  // 2. Try data-src (lazy loading)
   const dataSrcRegex = /<img[^>]+data-src=["']([^"'>]+)["'][^>]*>/gi;
   while ((match = dataSrcRegex.exec(description)) !== null) {
     const url = match[1];
@@ -110,7 +108,6 @@ function extractImageFromDescription(description: string): string | undefined {
     }
   }
 
-  // 3. Try og:image meta tag (Wowhead often uses this)
   const ogImageRegex =
     /<meta[^>]+property=["']og:image["'][^>]+content=["']([^"'>]+)["'][^>]*>/gi;
   while ((match = ogImageRegex.exec(description)) !== null) {
@@ -122,7 +119,6 @@ function extractImageFromDescription(description: string): string | undefined {
 
   if (allMatches.length === 0) return undefined;
 
-  // Filter out small icons, logos, and Wowhead-specific assets
   for (const url of allMatches) {
     const lowerUrl = url.toLowerCase();
     if (
@@ -133,18 +129,16 @@ function extractImageFromDescription(description: string): string | undefined {
       lowerUrl.includes('16x16') ||
       lowerUrl.includes('32x32') ||
       lowerUrl.includes('64x64') ||
-      lowerUrl.includes('/static/') // Wowhead static assets
+      lowerUrl.includes('/static/')
     ) {
       continue;
     }
 
-    // Prefer images from Wowhead's CDN (wow.zamimg.com)
     if (lowerUrl.includes('zamimg.com') && lowerUrl.includes('/uploads/')) {
       return url;
     }
   }
 
-  // Fallback to first non-filtered image
   for (const url of allMatches) {
     const lowerUrl = url.toLowerCase();
     if (
@@ -179,7 +173,6 @@ async function fetchWowheadArticleImage(
 
     const html = await response.text();
 
-    // Extract og:image meta tag (most reliable for Wowhead)
     const ogImageMatch = /<meta property="og:image" content="([^"]+)"/.exec(
       html,
     );
@@ -187,7 +180,6 @@ async function fetchWowheadArticleImage(
       return ogImageMatch[1];
     }
 
-    // Fallback: first large image in article content
     const contentImgMatch =
       /<img[^>]+class="[^"]*news-image[^"]*"[^>]+src="([^"]+)"/.exec(html);
     if (contentImgMatch?.[1]) {
@@ -303,8 +295,6 @@ async function fetchRSSNews(feedUrl: string): Promise<RSSFeedItem[]> {
         imageUrl = extractImageFromDescription(entry.description);
       }
 
-      // ✅ ADD THIS BLOCK HERE (after line 329)
-      // 5. If still no image, fetch from article page (for Wowhead)
       if (!imageUrl && entry.link?.includes('wowhead.com')) {
         imageUrl = await fetchWowheadArticleImage(entry.link);
       }
@@ -331,7 +321,6 @@ async function fetchRSSNews(feedUrl: string): Promise<RSSFeedItem[]> {
         }
       }
 
-      // Debug logging for first entry
       if (index === 0) {
         logger.debug('RSS feed entry debug:', {
           title: entry.title,
@@ -583,19 +572,25 @@ export async function checkGameNews(
           continue;
         }
 
+        const sortedItems = items
+          .filter((item) => item.guid && item.pubDate)
+          .sort((a, b) => {
+            const dateA = new Date(a.pubDate).getTime();
+            const dateB = new Date(b.pubDate).getTime();
+            return dateA - dateB;
+          });
+
         const newItems = await Promise.all(
-          items
-            .filter((item) => item.guid)
-            .map(async (item) => ({
-              item,
-              isNew: !(await isNewsPosted(item.guid, channelGuildId)),
-            })),
+          sortedItems.map(async (item) => ({
+            item,
+            isNew: !(await isNewsPosted(item.guid, channelGuildId)),
+          })),
         );
 
         const itemsToPost = newItems
           .filter((x) => x.isNew)
           .map((x) => x.item)
-          .slice(0, 3);
+          .slice(0, 5);
 
         for (const item of itemsToPost) {
           if (!item.guid) continue;
@@ -615,11 +610,6 @@ export async function checkGameNews(
             const isValidImage = await validateImageUrl(item.image);
             if (isValidImage) {
               embed.setImage(item.image);
-            } else {
-              logger.debug('Invalid image URL, skipping', {
-                url: item.image,
-                title: item.title,
-              });
             }
           }
 
@@ -635,6 +625,11 @@ export async function checkGameNews(
               item.title,
             );
             totalPosted++;
+
+            if (itemsToPost.indexOf(item) < itemsToPost.length - 1) {
+              await new Promise((resolve) => setTimeout(resolve, 1500));
+            }
+
             logger.debug(`Posted ${source.name} news to channel`, {
               channelId,
               itemId: item.guid,
