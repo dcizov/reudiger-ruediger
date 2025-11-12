@@ -3,6 +3,7 @@ import {
   ButtonBuilder,
   ButtonStyle,
   EmbedBuilder,
+  MessageFlags,
   SlashCommandBuilder,
   StringSelectMenuBuilder,
   type ChatInputCommandInteraction,
@@ -22,7 +23,7 @@ export const roles: Command = {
     .setDescription('Manage your server roles'),
 
   async execute(interaction: ChatInputCommandInteraction) {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     try {
       if (!interaction.guild || !interaction.member) {
@@ -184,7 +185,7 @@ export const roles: Command = {
           .catch(() => null);
       } else {
         await interaction
-          .reply({ content: errorMessage, ephemeral: true })
+          .reply({ content: errorMessage, flags: MessageFlags.Ephemeral })
           .catch(() => null);
       }
     }

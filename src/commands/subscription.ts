@@ -1,4 +1,5 @@
 import {
+  MessageFlags,
   SlashCommandBuilder,
   type AutocompleteInteraction,
   type ChatInputCommandInteraction,
@@ -101,7 +102,7 @@ export const subscription: SubcommandCommand = {
       default:
         await interaction.reply({
           content: '❌ Unknown subcommand.',
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
     }
   },
@@ -140,12 +141,12 @@ async function handleAdd(interaction: ChatInputCommandInteraction) {
   if (!apiKey) {
     await interaction.reply({
       content: '❌ Missing ITAD API key.',
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
     return;
   }
 
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   const userSubscriptions = await db.query.subscriptions.findMany({
     where: eq(subscriptions.userId, userId),
@@ -239,7 +240,7 @@ async function handleRemove(interaction: ChatInputCommandInteraction) {
   if (!sub) {
     await interaction.reply({
       content: `❌ You're not subscribed to **${title}**.`,
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
     return;
   }
@@ -248,7 +249,7 @@ async function handleRemove(interaction: ChatInputCommandInteraction) {
 
   await interaction.reply({
     content: `🗑️ Unsubscribed from **${title}**.`,
-    ephemeral: true,
+    flags: MessageFlags.Ephemeral,
   });
 }
 
@@ -262,7 +263,7 @@ async function handleClear(interaction: ChatInputCommandInteraction) {
   if (all.length === 0) {
     await interaction.reply({
       content: '📭 You are not subscribed to any games.',
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
     return;
   }
@@ -271,7 +272,7 @@ async function handleClear(interaction: ChatInputCommandInteraction) {
 
   await interaction.reply({
     content: `🗑️ You have unsubscribed from **${all.length}** game(s).`,
-    ephemeral: true,
+    flags: MessageFlags.Ephemeral,
   });
 }
 
@@ -283,7 +284,7 @@ async function handleList(interaction: ChatInputCommandInteraction) {
   if (subs.length === 0) {
     await interaction.reply({
       content: "📭 You don't have any active subscriptions.",
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
     return;
   }
@@ -304,7 +305,7 @@ async function handleList(interaction: ChatInputCommandInteraction) {
 
   await interaction.reply({
     content: `📋 **You're tracking ${subs.length} game(s):**\n\n${list}`,
-    ephemeral: true,
+    flags: MessageFlags.Ephemeral,
   });
 }
 
@@ -324,7 +325,7 @@ async function handleUpdate(interaction: ChatInputCommandInteraction) {
   if (!sub) {
     await interaction.reply({
       content: `❌ No subscription found for **${title}**.`,
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
     return;
   }
@@ -336,7 +337,7 @@ async function handleUpdate(interaction: ChatInputCommandInteraction) {
 
   await interaction.reply({
     content: `🎯 Updated threshold for **${title}** to €${newPrice.toFixed(2)}.`,
-    ephemeral: true,
+    flags: MessageFlags.Ephemeral,
   });
 }
 
@@ -365,6 +366,6 @@ async function handleNotify(interaction: ChatInputCommandInteraction) {
     content: newValue
       ? '🔔 Notifications enabled.'
       : '🔕 Notifications disabled.',
-    ephemeral: true,
+    flags: MessageFlags.Ephemeral,
   });
 }

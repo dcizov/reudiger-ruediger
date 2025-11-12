@@ -1,4 +1,5 @@
 import {
+  MessageFlags,
   PermissionFlagsBits,
   SlashCommandBuilder,
   type ChatInputCommandInteraction,
@@ -14,7 +15,7 @@ export const deal: Command = {
     .setDescription('Admin: Manually trigger deal posting (bypasses schedule)')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
   async execute(interaction: ChatInputCommandInteraction) {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     try {
       const posted = await postNewDeals(interaction.client, 5);
       if (posted > 0) {

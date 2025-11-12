@@ -1,4 +1,5 @@
 import {
+  MessageFlags,
   SlashCommandBuilder,
   type ChatInputCommandInteraction,
 } from 'discord.js';
@@ -12,7 +13,7 @@ export const cleanup: Command = {
     .setName('cleanup')
     .setDescription('Remove expired deals from the channel'),
   async execute(interaction: ChatInputCommandInteraction) {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     // Check if user has admin permissions
     if (!interaction.memberPermissions?.has('Administrator')) {

@@ -90,7 +90,7 @@ client.on(Events.InteractionCreate, (interaction: Interaction) => {
         if (!buttonData) {
           await interaction.reply({
             content: '❌ This role button is no longer valid.',
-            ephemeral: true,
+            flags: MessageFlags.Ephemeral,
           });
           return;
         }
@@ -98,7 +98,7 @@ client.on(Events.InteractionCreate, (interaction: Interaction) => {
         if (!interaction.guild || !interaction.member) {
           await interaction.reply({
             content: '❌ This command can only be used in a server.',
-            ephemeral: true,
+            flags: MessageFlags.Ephemeral,
           });
           return;
         }
@@ -112,7 +112,7 @@ client.on(Events.InteractionCreate, (interaction: Interaction) => {
           if (!cooldownCheck.canChange) {
             await interaction.reply({
               content: `⏱️ Please wait ${cooldownCheck.remainingTime} minute(s) before changing roles again.`,
-              ephemeral: true,
+              flags: MessageFlags.Ephemeral,
             });
             return;
           }
@@ -121,7 +121,7 @@ client.on(Events.InteractionCreate, (interaction: Interaction) => {
           if (buttonData.required) {
             await interaction.reply({
               content: '🔒 This role is required and cannot be removed.',
-              ephemeral: true,
+              flags: MessageFlags.Ephemeral,
             });
             return;
           }
@@ -131,7 +131,7 @@ client.on(Events.InteractionCreate, (interaction: Interaction) => {
         if (!member) {
           await interaction.reply({
             content: '❌ Could not find your member data.',
-            ephemeral: true,
+            flags: MessageFlags.Ephemeral,
           });
           return;
         }
@@ -140,7 +140,7 @@ client.on(Events.InteractionCreate, (interaction: Interaction) => {
         if (!role) {
           await interaction.reply({
             content: '❌ This role no longer exists.',
-            ephemeral: true,
+            flags: MessageFlags.Ephemeral,
           });
           return;
         }
@@ -149,13 +149,13 @@ client.on(Events.InteractionCreate, (interaction: Interaction) => {
           await member.roles.remove(role);
           await interaction.reply({
             content: `✅ Removed the **${role.name}** role from you.`,
-            ephemeral: true,
+            flags: MessageFlags.Ephemeral,
           });
         } else {
           await member.roles.add(role);
           await interaction.reply({
             content: `✅ Gave you the **${role.name}** role!`,
-            ephemeral: true,
+            flags: MessageFlags.Ephemeral,
           });
         }
 
@@ -171,7 +171,7 @@ client.on(Events.InteractionCreate, (interaction: Interaction) => {
         await interaction
           .reply({
             content: '❌ An error occurred while toggling your role.',
-            ephemeral: true,
+            flags: MessageFlags.Ephemeral,
           })
           .catch(() => null);
       }
@@ -185,7 +185,7 @@ client.on(Events.InteractionCreate, (interaction: Interaction) => {
           if (!interaction.guild || !interaction.member) {
             await interaction.reply({
               content: '❌ This command can only be used in a server.',
-              ephemeral: true,
+              flags: MessageFlags.Ephemeral,
             });
             return;
           }
@@ -198,7 +198,7 @@ client.on(Events.InteractionCreate, (interaction: Interaction) => {
           if (!cooldownCheck.canChange) {
             await interaction.reply({
               content: `⏱️ Please wait ${cooldownCheck.remainingTime} minute(s) before changing roles again.`,
-              ephemeral: true,
+              flags: MessageFlags.Ephemeral,
             });
             return;
           }
@@ -209,7 +209,7 @@ client.on(Events.InteractionCreate, (interaction: Interaction) => {
           if (!member) {
             await interaction.reply({
               content: '❌ Could not find your member data.',
-              ephemeral: true,
+              flags: MessageFlags.Ephemeral,
             });
             return;
           }
@@ -284,12 +284,12 @@ client.on(Events.InteractionCreate, (interaction: Interaction) => {
             await interaction.reply({
               content:
                 '✅ No changes needed - your roles are already up to date.',
-              ephemeral: true,
+              flags: MessageFlags.Ephemeral,
             });
           } else {
             await interaction.reply({
               content: changes.join('\n'),
-              ephemeral: true,
+              flags: MessageFlags.Ephemeral,
             });
           }
         }
@@ -298,7 +298,7 @@ client.on(Events.InteractionCreate, (interaction: Interaction) => {
         await interaction
           .reply({
             content: '❌ An error occurred while updating your roles.',
-            ephemeral: true,
+            flags: MessageFlags.Ephemeral,
           })
           .catch(() => null);
       }

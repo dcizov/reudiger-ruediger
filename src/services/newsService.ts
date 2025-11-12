@@ -1,10 +1,10 @@
 import { extract } from '@extractus/feed-extractor';
 import type { Client, TextChannel } from 'discord.js';
 import { EmbedBuilder } from 'discord.js';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, lt } from 'drizzle-orm';
 
 import { db } from '../db';
-import { newsSettings } from '../db/schema';
+import { newsSettings, postedNews } from '../db/schema';
 import {
   FeedEntrySchema,
   FeedResponseSchema,
@@ -15,7 +15,15 @@ import {
 import { getBotConfig } from '../utils/botConfig';
 import { logger } from '../utils/logger';
 
-const POSTED_NEWS_IDS = new Set<string>();
+interface RSSCacheEntry {
+  data: RSSFeedItem[];
+  timestamp: number;
+}
+
+const RSS_CACHE = new Map<string, RSSCacheEntry>();
+const CACHE_TTL = 15 * 60 * 1000;
+
+const WOWHEAD_ICON = 'https://wow.zamimg.com/images/logos/favicon.png';
 
 export const AVAILABLE_NEWS_SOURCES = {
   cs2: {
@@ -45,9 +53,156 @@ export const AVAILABLE_NEWS_SOURCES = {
     icon: '🏰',
     description: 'WoW Retail news from Wowhead',
   },
+  wowInDev: {
+    type: 'rss' as const,
+    url: 'https://www.wowhead.com/news/rss/in-dev',
+    name: 'WoW In Development',
+    category: 'World of Warcraft',
+    color: 0xff8c00,
+    icon: '🔨',
+    description: 'WoW development and PTR news from Wowhead',
+  },
 } as const;
 
 export type NewsSourceKey = keyof typeof AVAILABLE_NEWS_SOURCES;
+
+async function validateImageUrl(url: string): Promise<boolean> {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+    const response = await fetch(url, {
+      method: 'HEAD',
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    const contentType = response.headers.get('content-type');
+    return response.ok && contentType?.startsWith('image/') === true;
+  } catch (error) {
+    logger.debug('Image validation failed', { url, error });
+    return false;
+  }
+}
+
+function extractImageFromDescription(description: string): string | undefined {
+  if (!description) return undefined;
+
+  const allMatches: string[] = [];
+
+  // 1. Try standard img src
+  const imgRegex = /<img[^>]+src=["']([^"'>]+)["'][^>]*>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = imgRegex.exec(description)) !== null) {
+    const url = match[1];
+    if (url) {
+      allMatches.push(url);
+    }
+  }
+
+  // 2. Try data-src (lazy loading)
+  const dataSrcRegex = /<img[^>]+data-src=["']([^"'>]+)["'][^>]*>/gi;
+  while ((match = dataSrcRegex.exec(description)) !== null) {
+    const url = match[1];
+    if (url) {
+      allMatches.push(url);
+    }
+  }
+
+  // 3. Try og:image meta tag (Wowhead often uses this)
+  const ogImageRegex =
+    /<meta[^>]+property=["']og:image["'][^>]+content=["']([^"'>]+)["'][^>]*>/gi;
+  while ((match = ogImageRegex.exec(description)) !== null) {
+    const url = match[1];
+    if (url) {
+      allMatches.push(url);
+    }
+  }
+
+  if (allMatches.length === 0) return undefined;
+
+  // Filter out small icons, logos, and Wowhead-specific assets
+  for (const url of allMatches) {
+    const lowerUrl = url.toLowerCase();
+    if (
+      lowerUrl.includes('icon') ||
+      lowerUrl.includes('logo') ||
+      lowerUrl.includes('avatar') ||
+      lowerUrl.includes('favicon') ||
+      lowerUrl.includes('16x16') ||
+      lowerUrl.includes('32x32') ||
+      lowerUrl.includes('64x64') ||
+      lowerUrl.includes('/static/') // Wowhead static assets
+    ) {
+      continue;
+    }
+
+    // Prefer images from Wowhead's CDN (wow.zamimg.com)
+    if (lowerUrl.includes('zamimg.com') && lowerUrl.includes('/uploads/')) {
+      return url;
+    }
+  }
+
+  // Fallback to first non-filtered image
+  for (const url of allMatches) {
+    const lowerUrl = url.toLowerCase();
+    if (
+      !lowerUrl.includes('icon') &&
+      !lowerUrl.includes('logo') &&
+      !lowerUrl.includes('favicon')
+    ) {
+      return url;
+    }
+  }
+
+  return undefined;
+}
+
+async function fetchWowheadArticleImage(
+  articleUrl: string,
+): Promise<string | undefined> {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+    const response = await fetch(articleUrl, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; DiscordBot/1.0)',
+      },
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) return undefined;
+
+    const html = await response.text();
+
+    // Extract og:image meta tag (most reliable for Wowhead)
+    const ogImageMatch = /<meta property="og:image" content="([^"]+)"/.exec(
+      html,
+    );
+    if (ogImageMatch?.[1]) {
+      return ogImageMatch[1];
+    }
+
+    // Fallback: first large image in article content
+    const contentImgMatch =
+      /<img[^>]+class="[^"]*news-image[^"]*"[^>]+src="([^"]+)"/.exec(html);
+    if (contentImgMatch?.[1]) {
+      return contentImgMatch[1];
+    }
+
+    return undefined;
+  } catch (error) {
+    logger.debug('Failed to fetch Wowhead article image', {
+      url: articleUrl,
+      error,
+    });
+    return undefined;
+  }
+}
 
 async function fetchSteamNews(
   appId: number,
@@ -66,6 +221,47 @@ async function fetchSteamNews(
   return data.appnews.newsitems;
 }
 
+async function fetchRSSNewsWithRetry(
+  feedUrl: string,
+  retries = 3,
+): Promise<RSSFeedItem[]> {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      return await fetchRSSNews(feedUrl);
+    } catch (error) {
+      logger.warn(`RSS fetch attempt ${attempt}/${retries} failed`, {
+        url: feedUrl,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        attempt,
+      });
+
+      if (attempt === retries) {
+        throw error;
+      }
+
+      await new Promise((resolve) =>
+        setTimeout(resolve, 1000 * Math.pow(2, attempt)),
+      );
+    }
+  }
+
+  return [];
+}
+
+async function fetchRSSNewsWithCache(feedUrl: string): Promise<RSSFeedItem[]> {
+  const cached = RSS_CACHE.get(feedUrl);
+  const now = Date.now();
+
+  if (cached && now - cached.timestamp < CACHE_TTL) {
+    logger.debug('Using cached RSS feed', { url: feedUrl });
+    return cached.data;
+  }
+
+  const items = await fetchRSSNewsWithRetry(feedUrl);
+  RSS_CACHE.set(feedUrl, { data: items, timestamp: now });
+  return items;
+}
+
 async function fetchRSSNews(feedUrl: string): Promise<RSSFeedItem[]> {
   const rawFeed = await extract(feedUrl);
   const feed = FeedResponseSchema.parse(rawFeed);
@@ -74,37 +270,148 @@ async function fetchRSSNews(feedUrl: string): Promise<RSSFeedItem[]> {
     return [];
   }
 
-  return feed.entries.map((rawEntry): RSSFeedItem => {
-    const entry = FeedEntrySchema.parse(rawEntry);
+  return Promise.all(
+    feed.entries.map(async (rawEntry, index): Promise<RSSFeedItem> => {
+      const entry = FeedEntrySchema.parse(rawEntry);
 
-    let imageUrl: string | undefined;
+      let imageUrl: string | undefined;
 
-    if (entry.enclosure?.url) {
-      imageUrl = entry.enclosure.url;
-    }
-
-    if (!imageUrl && entry['media:content']) {
-      const media = Array.isArray(entry['media:content'])
-        ? entry['media:content'][0]
-        : entry['media:content'];
-      if (media?.url) {
-        imageUrl = media.url;
+      if (entry.enclosure?.url) {
+        imageUrl = entry.enclosure.url;
       }
-    }
 
-    if (!imageUrl && entry['media:thumbnail']?.url) {
-      imageUrl = entry['media:thumbnail'].url;
-    }
+      if (!imageUrl && entry['media:content']) {
+        const mediaContent = entry['media:content'];
 
-    return {
-      guid: entry.id ?? entry.link ?? '',
-      title: entry.title ?? 'News Update',
-      link: entry.link ?? '',
-      contentSnippet: entry.description ?? '',
-      pubDate: entry.published ?? '',
-      ...(imageUrl && { image: imageUrl }),
-    };
-  });
+        if (Array.isArray(mediaContent)) {
+          const firstMedia = mediaContent[0];
+          if (firstMedia?.url) {
+            imageUrl = firstMedia.url;
+          }
+        } else {
+          if (mediaContent?.url) {
+            imageUrl = mediaContent.url;
+          }
+        }
+      }
+
+      if (!imageUrl && entry['media:thumbnail']?.url) {
+        imageUrl = entry['media:thumbnail'].url;
+      }
+
+      if (!imageUrl && entry.description) {
+        imageUrl = extractImageFromDescription(entry.description);
+      }
+
+      // ✅ ADD THIS BLOCK HERE (after line 329)
+      // 5. If still no image, fetch from article page (for Wowhead)
+      if (!imageUrl && entry.link?.includes('wowhead.com')) {
+        imageUrl = await fetchWowheadArticleImage(entry.link);
+      }
+
+      let cleanDescription = entry.description ?? '';
+      if (cleanDescription) {
+        cleanDescription = cleanDescription.replace(/<[^>]*>/g, '');
+        cleanDescription = cleanDescription
+          .replace(/&nbsp;/g, ' ')
+          .replace(/&amp;/g, '&')
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&quot;/g, '"')
+          .replace(/&#39;/g, "'")
+          .replace(/&#039;/g, "'")
+          .replace(/&apos;/g, "'")
+          .replace(/»/g, '')
+          .replace(/«/g, '')
+          .replace(/\s+/g, ' ')
+          .trim();
+
+        if (cleanDescription.length > 400) {
+          cleanDescription = cleanDescription.slice(0, 397) + '...';
+        }
+      }
+
+      // Debug logging for first entry
+      if (index === 0) {
+        logger.debug('RSS feed entry debug:', {
+          title: entry.title,
+          hasEnclosure: !!entry.enclosure,
+          enclosureUrl: entry.enclosure?.url,
+          hasMediaContent: !!entry['media:content'],
+          mediaContentType: Array.isArray(entry['media:content'])
+            ? 'array'
+            : typeof entry['media:content'],
+          hasMediaThumbnail: !!entry['media:thumbnail'],
+          hasDescription: !!entry.description,
+          descriptionLength: entry.description?.length,
+          descriptionPreview: entry.description?.substring(0, 500),
+          extractedImage: imageUrl,
+        });
+      }
+
+      return {
+        guid: entry.id ?? entry.link ?? '',
+        title: entry.title ?? 'News Update',
+        link: entry.link ?? '',
+        contentSnippet: cleanDescription,
+        pubDate: entry.published ?? '',
+        ...(imageUrl && { image: imageUrl }),
+      };
+    }),
+  );
+}
+
+async function isNewsPosted(guid: string, guildId: string): Promise<boolean> {
+  const result = await db
+    .select()
+    .from(postedNews)
+    .where(and(eq(postedNews.guid, guid), eq(postedNews.guildId, guildId)))
+    .limit(1);
+
+  return result.length > 0;
+}
+
+async function markNewsPosted(
+  guid: string,
+  source: string,
+  guildId: string,
+  messageId: string,
+  title: string,
+): Promise<void> {
+  try {
+    await db
+      .insert(postedNews)
+      .values({
+        guid,
+        source,
+        guildId,
+        messageId,
+        title,
+      })
+      .onConflictDoNothing();
+  } catch (error) {
+    logger.error('Failed to mark news as posted', { guid, source, error });
+  }
+}
+
+export async function cleanupOldPostedNews(): Promise<number> {
+  try {
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const result = await db
+      .delete(postedNews)
+      .where(lt(postedNews.postedAt, thirtyDaysAgo));
+
+    const deleted = result.length;
+    if (deleted > 0) {
+      logger.info(`🗑️ Cleaned up ${deleted} old posted news entries`);
+    }
+    return deleted;
+  } catch (error) {
+    logger.error('Failed to cleanup old posted news', { error });
+    return 0;
+  }
 }
 
 async function getEnabledSources(guildId: string): Promise<Set<string>> {
@@ -122,10 +429,6 @@ async function getEnabledSources(guildId: string): Promise<Set<string>> {
   return new Set(settings.map((s) => s.source));
 }
 
-/**
- * Get the configured news channel for a specific source
- * Falls back to default news channel if no source-specific channel is set
- */
 async function getNewsChannelForSource(
   guildId: string,
   source: string,
@@ -142,8 +445,9 @@ async function getNewsChannelForSource(
     )
     .limit(1);
 
-  if (setting[0]?.channelId) {
-    return setting[0].channelId;
+  const firstSetting = setting[0];
+  if (firstSetting?.channelId) {
+    return firstSetting.channelId;
   }
 
   const config = await getBotConfig();
@@ -153,6 +457,7 @@ async function getNewsChannelForSource(
 export async function checkGameNews(
   client: Client,
   guildId?: string,
+  sourceFilter?: NewsSourceKey,
 ): Promise<number> {
   const config = await getBotConfig();
   const defaultNewsChannelId = config.newsChannelId;
@@ -162,7 +467,6 @@ export async function checkGameNews(
     return 0;
   }
 
-  // Fetch and validate default channel
   const defaultChannel = await client.channels.fetch(defaultNewsChannelId);
 
   if (!defaultChannel) {
@@ -172,7 +476,6 @@ export async function checkGameNews(
     return 0;
   }
 
-  // Determine guild ID from provided param or channel
   const channelGuildId =
     guildId ??
     ('guild' in defaultChannel ? defaultChannel.guild?.id : undefined);
@@ -186,12 +489,15 @@ export async function checkGameNews(
   let totalPosted = 0;
 
   for (const [key, source] of Object.entries(AVAILABLE_NEWS_SOURCES)) {
+    if (sourceFilter && key !== sourceFilter) {
+      continue;
+    }
+
     if (!enabledSources.has(key)) {
       continue;
     }
 
     try {
-      // Get source-specific channel OR fall back to default
       const channelId = await getNewsChannelForSource(channelGuildId, key);
 
       if (!channelId) {
@@ -210,38 +516,49 @@ export async function checkGameNews(
 
       if (source.type === 'steam') {
         const items = await fetchSteamNews(source.appId);
-        const newItems = items.filter((item) => !POSTED_NEWS_IDS.has(item.gid));
+        const newItems = await Promise.all(
+          items.map(async (item) => ({
+            item,
+            isNew: !(await isNewsPosted(item.gid, channelGuildId)),
+          })),
+        );
 
-        for (const item of newItems.reverse().slice(0, 3)) {
+        const itemsToPost = newItems
+          .filter((x) => x.isNew)
+          .map((x) => x.item)
+          .reverse()
+          .slice(0, 3);
+
+        for (const item of itemsToPost) {
           const imageUrl = `https://cdn.cloudflare.steamstatic.com/steam/apps/${source.appId}/capsule_616x353.jpg`;
 
           const embed = new EmbedBuilder()
-            .setTitle(`${source.icon} ${item.title}`)
+            .setTitle(item.title)
             .setURL(item.url)
             .setDescription(
-              item.contents.slice(0, 400) +
-                (item.contents.length > 400 ? '...' : ''),
+              item.contents
+                .replace(/\\/g, '')
+                .replace(/\n/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim()
+                .slice(0, 400) + (item.contents.length > 400 ? '...' : ''),
             )
             .setColor(source.color)
             .setImage(imageUrl)
-            .addFields(
-              {
-                name: '📰 Source',
-                value: item.feedlabel || source.name,
-                inline: true,
-              },
-              {
-                name: '✍️ Author',
-                value: item.author || 'Official',
-                inline: true,
-              },
-            )
             .setFooter({ text: source.name })
             .setTimestamp(item.date * 1000);
 
           try {
-            await (channel as TextChannel).send({ embeds: [embed] });
-            POSTED_NEWS_IDS.add(item.gid);
+            const message = await (channel as TextChannel).send({
+              embeds: [embed],
+            });
+            await markNewsPosted(
+              item.gid,
+              key,
+              channelGuildId,
+              message.id,
+              item.title,
+            );
             totalPosted++;
             logger.debug(`Posted ${source.name} news to channel`, {
               channelId,
@@ -256,7 +573,7 @@ export async function checkGameNews(
           }
         }
       } else if (source.type === 'rss') {
-        const items = await fetchRSSNews(source.url);
+        const items = await fetchRSSNewsWithCache(source.url);
 
         if (items.length === 0) {
           logger.warn(`No items returned from RSS feed: ${source.name}`, {
@@ -266,32 +583,62 @@ export async function checkGameNews(
           continue;
         }
 
-        const newItems = items.filter(
-          (item) => item.guid && !POSTED_NEWS_IDS.has(item.guid),
+        const newItems = await Promise.all(
+          items
+            .filter((item) => item.guid)
+            .map(async (item) => ({
+              item,
+              isNew: !(await isNewsPosted(item.guid, channelGuildId)),
+            })),
         );
 
-        for (const item of newItems.slice(0, 3)) {
+        const itemsToPost = newItems
+          .filter((x) => x.isNew)
+          .map((x) => x.item)
+          .slice(0, 3);
+
+        for (const item of itemsToPost) {
           if (!item.guid) continue;
 
           const embed = new EmbedBuilder()
-            .setTitle(`${source.icon} ${item.title}`)
+            .setTitle(item.title)
             .setURL(item.link)
-            .setDescription(item.contentSnippet.slice(0, 400))
+            .setDescription(item.contentSnippet || 'Click to read more')
             .setColor(source.color)
-            .setFooter({ text: source.name })
+            .setFooter({
+              text: `${source.name} • Published`,
+              iconURL: WOWHEAD_ICON,
+            })
             .setTimestamp(item.pubDate ? new Date(item.pubDate) : new Date());
 
           if (item.image) {
-            embed.setImage(item.image);
+            const isValidImage = await validateImageUrl(item.image);
+            if (isValidImage) {
+              embed.setImage(item.image);
+            } else {
+              logger.debug('Invalid image URL, skipping', {
+                url: item.image,
+                title: item.title,
+              });
+            }
           }
 
           try {
-            await (channel as TextChannel).send({ embeds: [embed] });
-            POSTED_NEWS_IDS.add(item.guid);
+            const message = await (channel as TextChannel).send({
+              embeds: [embed],
+            });
+            await markNewsPosted(
+              item.guid,
+              key,
+              channelGuildId,
+              message.id,
+              item.title,
+            );
             totalPosted++;
             logger.debug(`Posted ${source.name} news to channel`, {
               channelId,
               itemId: item.guid,
+              hasImage: !!item.image,
             });
           } catch (sendError) {
             logger.error(`Failed to post ${source.name} news to channel:`, {

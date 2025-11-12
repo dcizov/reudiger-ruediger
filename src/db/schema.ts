@@ -129,3 +129,22 @@ export const newsSettings = pgTable(
     ),
   ],
 );
+
+export const postedNews = pgTable(
+  'posted_news',
+  {
+    id: serial('id').primaryKey(),
+    guid: text('guid').notNull(),
+    source: text('source').notNull(),
+    guildId: text('guild_id').notNull(),
+    messageId: varchar('message_id', { length: 255 }),
+    title: text('title'),
+    postedAt: timestamp('posted_at').notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('posted_news_guid_guild_unique').on(table.guid, table.guildId),
+    index('posted_news_guild_id_idx').on(table.guildId),
+    index('posted_news_source_idx').on(table.source),
+    index('posted_news_posted_at_idx').on(table.postedAt),
+  ],
+);
