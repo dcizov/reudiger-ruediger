@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "dev:docker": "./start-dev.sh",
-    "dev:db": "./start-dev.sh",
+    "dev:db": "docker compose up -d postgres-db",
+    "dev:docker": "docker compose up -d",
     "start": "node dist/index.js",
     "build": "tsup src/index.ts --minify --dts --out-dir dist",
     "check": "npm run lint && npm run typecheck",

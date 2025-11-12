@@ -5,29 +5,19 @@ import { and, eq } from 'drizzle-orm';
 
 import { db } from '../db';
 import { newsSettings } from '../db/schema';
+import {
+  FeedEntrySchema,
+  FeedResponseSchema,
+  SteamNewsResponseSchema,
+  type RSSFeedItem,
+  type SteamNewsItem,
+} from '../schemas/news';
 import { getBotConfig } from '../utils/botConfig';
 import { logger } from '../utils/logger';
 
 const POSTED_NEWS_IDS = new Set<string>();
 
-interface SteamNewsItem {
-  gid: string;
-  title: string;
-  url: string;
-  author: string;
-  contents: string;
-  date: number;
-  feedlabel: string;
-}
-
-interface SteamNewsResponse {
-  appnews: {
-    newsitems: SteamNewsItem[];
-  };
-}
-
 export const AVAILABLE_NEWS_SOURCES = {
-  // Steam Games
   cs2: {
     type: 'steam' as const,
     appId: 730,
@@ -46,8 +36,6 @@ export const AVAILABLE_NEWS_SOURCES = {
     icon: '⚔️',
     description: 'Official Valheim updates from Steam',
   },
-
-  // World of Warcraft
   wowRetail: {
     type: 'rss' as const,
     url: 'https://www.wowhead.com/news/rss/retail',
@@ -73,26 +61,50 @@ async function fetchSteamNews(
     throw new Error(`Steam API returned ${response.status}`);
   }
 
-  const data = (await response.json()) as SteamNewsResponse;
+  const rawData: unknown = await response.json();
+  const data = SteamNewsResponseSchema.parse(rawData);
   return data.appnews.newsitems;
 }
 
-async function fetchRSSNews(feedUrl: string) {
-  // extract() returns properly typed Feed object with all fields typed correctly
-  const feed = await extract(feedUrl);
+async function fetchRSSNews(feedUrl: string): Promise<RSSFeedItem[]> {
+  const rawFeed = await extract(feedUrl);
+  const feed = FeedResponseSchema.parse(rawFeed);
 
   if (!feed?.entries) {
     return [];
   }
 
-  // All fields are properly typed - no type assertions needed!
-  return feed.entries.map((entry) => ({
-    guid: entry.id ?? entry.link ?? '',
-    title: entry.title ?? 'News Update',
-    link: entry.link ?? '',
-    contentSnippet: entry.description ?? '',
-    pubDate: entry.published ?? '',
-  }));
+  return feed.entries.map((rawEntry): RSSFeedItem => {
+    const entry = FeedEntrySchema.parse(rawEntry);
+
+    let imageUrl: string | undefined;
+
+    if (entry.enclosure?.url) {
+      imageUrl = entry.enclosure.url;
+    }
+
+    if (!imageUrl && entry['media:content']) {
+      const media = Array.isArray(entry['media:content'])
+        ? entry['media:content'][0]
+        : entry['media:content'];
+      if (media?.url) {
+        imageUrl = media.url;
+      }
+    }
+
+    if (!imageUrl && entry['media:thumbnail']?.url) {
+      imageUrl = entry['media:thumbnail'].url;
+    }
+
+    return {
+      guid: entry.id ?? entry.link ?? '',
+      title: entry.title ?? 'News Update',
+      link: entry.link ?? '',
+      contentSnippet: entry.description ?? '',
+      pubDate: entry.published ?? '',
+      ...(imageUrl && { image: imageUrl }),
+    };
+  });
 }
 
 async function getEnabledSources(guildId: string): Promise<Set<string>> {
@@ -103,7 +115,6 @@ async function getEnabledSources(guildId: string): Promise<Set<string>> {
       and(eq(newsSettings.guildId, guildId), eq(newsSettings.enabled, true)),
     );
 
-  // If no settings exist, enable all by default
   if (settings.length === 0) {
     return new Set(Object.keys(AVAILABLE_NEWS_SOURCES));
   }
@@ -111,27 +122,61 @@ async function getEnabledSources(guildId: string): Promise<Set<string>> {
   return new Set(settings.map((s) => s.source));
 }
 
+/**
+ * Get the configured news channel for a specific source
+ * Falls back to default news channel if no source-specific channel is set
+ */
+async function getNewsChannelForSource(
+  guildId: string,
+  source: string,
+): Promise<string | null> {
+  const setting = await db
+    .select()
+    .from(newsSettings)
+    .where(
+      and(
+        eq(newsSettings.guildId, guildId),
+        eq(newsSettings.source, source),
+        eq(newsSettings.enabled, true),
+      ),
+    )
+    .limit(1);
+
+  if (setting[0]?.channelId) {
+    return setting[0].channelId;
+  }
+
+  const config = await getBotConfig();
+  return config.newsChannelId ?? null;
+}
+
 export async function checkGameNews(
   client: Client,
   guildId?: string,
 ): Promise<number> {
   const config = await getBotConfig();
-  const newsChannelId = config.newsChannelId;
+  const defaultNewsChannelId = config.newsChannelId;
 
-  if (!newsChannelId) {
-    logger.debug('No news channel configured');
+  if (!defaultNewsChannelId) {
+    logger.debug('No default news channel configured');
     return 0;
   }
 
-  const channel = await client.channels.fetch(newsChannelId);
-  if (!channel?.isTextBased()) {
-    logger.warn('News channel is not a text channel');
+  // Fetch and validate default channel
+  const defaultChannel = await client.channels.fetch(defaultNewsChannelId);
+
+  if (!defaultChannel) {
+    logger.warn('Could not fetch default news channel', {
+      channelId: defaultNewsChannelId,
+    });
     return 0;
   }
 
-  // Get guild ID from channel
+  // Determine guild ID from provided param or channel
   const channelGuildId =
-    guildId ?? ('guild' in channel ? channel.guild?.id : undefined);
+    guildId ??
+    ('guild' in defaultChannel ? defaultChannel.guild?.id : undefined);
+
   if (!channelGuildId) {
     logger.warn('Could not determine guild ID for news');
     return 0;
@@ -141,17 +186,35 @@ export async function checkGameNews(
   let totalPosted = 0;
 
   for (const [key, source] of Object.entries(AVAILABLE_NEWS_SOURCES)) {
-    // Skip disabled sources
     if (!enabledSources.has(key)) {
       continue;
     }
 
     try {
+      // Get source-specific channel OR fall back to default
+      const channelId = await getNewsChannelForSource(channelGuildId, key);
+
+      if (!channelId) {
+        logger.debug(`No channel configured for source: ${key}`);
+        continue;
+      }
+
+      const channel = await client.channels.fetch(channelId);
+      if (!channel?.isTextBased()) {
+        logger.warn(`News channel for ${key} is not a text channel`, {
+          channelId,
+          source: key,
+        });
+        continue;
+      }
+
       if (source.type === 'steam') {
         const items = await fetchSteamNews(source.appId);
         const newItems = items.filter((item) => !POSTED_NEWS_IDS.has(item.gid));
 
         for (const item of newItems.reverse().slice(0, 3)) {
+          const imageUrl = `https://cdn.cloudflare.steamstatic.com/steam/apps/${source.appId}/capsule_616x353.jpg`;
+
           const embed = new EmbedBuilder()
             .setTitle(`${source.icon} ${item.title}`)
             .setURL(item.url)
@@ -160,6 +223,7 @@ export async function checkGameNews(
                 (item.contents.length > 400 ? '...' : ''),
             )
             .setColor(source.color)
+            .setImage(imageUrl)
             .addFields(
               {
                 name: '📰 Source',
@@ -175,12 +239,33 @@ export async function checkGameNews(
             .setFooter({ text: source.name })
             .setTimestamp(item.date * 1000);
 
-          await (channel as TextChannel).send({ embeds: [embed] });
-          POSTED_NEWS_IDS.add(item.gid);
-          totalPosted++;
+          try {
+            await (channel as TextChannel).send({ embeds: [embed] });
+            POSTED_NEWS_IDS.add(item.gid);
+            totalPosted++;
+            logger.debug(`Posted ${source.name} news to channel`, {
+              channelId,
+              itemId: item.gid,
+            });
+          } catch (sendError) {
+            logger.error(`Failed to post ${source.name} news to channel:`, {
+              error: sendError,
+              channelId,
+              source: key,
+            });
+          }
         }
       } else if (source.type === 'rss') {
         const items = await fetchRSSNews(source.url);
+
+        if (items.length === 0) {
+          logger.warn(`No items returned from RSS feed: ${source.name}`, {
+            url: source.url,
+            source: key,
+          });
+          continue;
+        }
+
         const newItems = items.filter(
           (item) => item.guid && !POSTED_NEWS_IDS.has(item.guid),
         );
@@ -196,13 +281,34 @@ export async function checkGameNews(
             .setFooter({ text: source.name })
             .setTimestamp(item.pubDate ? new Date(item.pubDate) : new Date());
 
-          await (channel as TextChannel).send({ embeds: [embed] });
-          POSTED_NEWS_IDS.add(item.guid);
-          totalPosted++;
+          if (item.image) {
+            embed.setImage(item.image);
+          }
+
+          try {
+            await (channel as TextChannel).send({ embeds: [embed] });
+            POSTED_NEWS_IDS.add(item.guid);
+            totalPosted++;
+            logger.debug(`Posted ${source.name} news to channel`, {
+              channelId,
+              itemId: item.guid,
+            });
+          } catch (sendError) {
+            logger.error(`Failed to post ${source.name} news to channel:`, {
+              error: sendError,
+              channelId,
+              source: key,
+            });
+          }
         }
       }
     } catch (error) {
-      logger.error(`Error fetching news for ${key}:`, { error });
+      logger.error(`Error fetching news for ${key}:`, {
+        error,
+        source: key,
+        type: source.type,
+        url: source.type === 'rss' ? source.url : `Steam App ${source.appId}`,
+      });
     }
   }
 
@@ -251,12 +357,10 @@ export async function getNewsSourceStatus(
 
   const status: Record<string, boolean> = {};
 
-  // Default all to enabled
   for (const key of Object.keys(AVAILABLE_NEWS_SOURCES)) {
     status[key] = true;
   }
 
-  // Override with actual settings
   for (const setting of settings) {
     status[setting.source] = setting.enabled;
   }

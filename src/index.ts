@@ -1,10 +1,10 @@
-import type { InteractionReplyOptions, MessagePayload } from 'discord.js';
 import {
   ActivityType,
   Client,
   Events,
   GatewayIntentBits,
   Interaction,
+  MessageFlags,
 } from 'discord.js';
 
 import { commands } from './commands';
@@ -309,6 +309,33 @@ client.on(Events.InteractionCreate, (interaction: Interaction) => {
       const command = commands[interaction.commandName];
       if (!command) return;
 
+      // Guard against duplicate
+      if (interaction.deferred || interaction.replied) {
+        logger.debug('Interaction already processed', {
+          commandName: interaction.commandName,
+          interactionId: interaction.id,
+        });
+        return;
+      }
+
+      // ✅ DEFER IMMEDIATELY FOR ALL COMMANDS
+      // This prevents timeout before reaching the handler
+      const needsDefer = ['setup', 'compare', 'subscription'].includes(
+        interaction.commandName,
+      );
+
+      if (needsDefer) {
+        try {
+          await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+        } catch (error) {
+          logger.warn('Could not defer interaction:', {
+            error,
+            commandName: interaction.commandName,
+          });
+          return;
+        }
+      }
+
       try {
         await command.execute(interaction);
 
@@ -321,17 +348,28 @@ client.on(Events.InteractionCreate, (interaction: Interaction) => {
           commandName: interaction.commandName,
         });
 
-        const replyMethod =
-          interaction.replied || interaction.deferred
-            ? (options: string | InteractionReplyOptions | MessagePayload) =>
-                interaction.followUp(options)
-            : (options: string | InteractionReplyOptions | MessagePayload) =>
-                interaction.reply(options);
-
-        await replyMethod({
-          content: 'There was an error executing this command!',
-          ephemeral: true,
-        });
+        try {
+          if (interaction.deferred && !interaction.replied) {
+            await interaction.editReply({
+              content: 'There was an error executing this command!',
+            });
+          } else if (interaction.replied) {
+            await interaction.followUp({
+              content: 'There was an error executing this command!',
+              flags: MessageFlags.Ephemeral,
+            });
+          } else {
+            await interaction.reply({
+              content: 'There was an error executing this command!',
+              flags: MessageFlags.Ephemeral,
+            });
+          }
+        } catch (replyError) {
+          logger.debug('Could not send error message to user:', {
+            error: replyError,
+            commandName: interaction.commandName,
+          });
+        }
       }
     }
   })();

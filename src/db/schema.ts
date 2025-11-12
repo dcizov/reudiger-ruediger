@@ -32,9 +32,7 @@ export const postedDeals = pgTable(
     historicalLow: real('historical_low'),
     expiresAt: timestamp('expires_at'),
   },
-  (table) => ({
-    expiresAtIdx: index('posted_deals_expires_at_idx').on(table.expiresAt),
-  }),
+  (table) => [index('posted_deals_expires_at_idx').on(table.expiresAt)],
 );
 
 export const botConfig = pgTable('bot_config', {
@@ -52,20 +50,20 @@ export const subscriptions = pgTable(
     username: text('username').notNull(),
     gameId: varchar('game_id', { length: 128 }).notNull(),
     title: text('title').notNull(),
-    historicalLow: integer('historical_low'), // Stored in cents for precision
+    historicalLow: integer('historical_low'),
     currentPrice: integer('current_price'),
     targetPrice: integer('target_price'),
     notified: boolean('notified').default(false),
     createdAt: timestamp('created_at').defaultNow(),
   },
-  (table) => ({
-    userIdIdx: index('subscriptions_user_id_idx').on(table.userId),
-    gameIdIdx: index('subscriptions_game_id_idx').on(table.gameId),
-    userGameUnique: uniqueIndex('subscriptions_user_game_unique').on(
+  (table) => [
+    index('subscriptions_user_id_idx').on(table.userId),
+    index('subscriptions_game_id_idx').on(table.gameId),
+    uniqueIndex('subscriptions_user_game_unique').on(
       table.userId,
       table.gameId,
     ),
-  }),
+  ],
 );
 
 export const userSettings = pgTable('user_settings', {
@@ -91,9 +89,9 @@ export const reactionRoleButtons = pgTable('reaction_role_buttons', {
   emoji: varchar('emoji', { length: 100 }).notNull(),
   label: varchar('label', { length: 100 }).notNull(),
   buttonId: varchar('button_id', { length: 100 }).notNull().unique(),
-  category: varchar('category', { length: 100 }), // For role grouping (e.g., "Gaming", "Access")
-  requiresExistingRoles: boolean('requires_existing_roles').default(false), // Dev role logic
-  required: boolean('required').default(false), // Members role can't be toggled off
+  category: varchar('category', { length: 100 }),
+  requiresExistingRoles: boolean('requires_existing_roles').default(false),
+  required: boolean('required').default(false),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
@@ -105,19 +103,29 @@ export const userRoleCooldowns = pgTable(
     guildId: varchar('guild_id', { length: 255 }).notNull(),
     lastChanged: timestamp('last_changed').defaultNow().notNull(),
   },
-  (table) => ({
-    userGuildUnique: uniqueIndex('user_role_cooldowns_user_guild_unique').on(
+  (table) => [
+    uniqueIndex('user_role_cooldowns_user_guild_unique').on(
       table.userId,
       table.guildId,
     ),
-  }),
+  ],
 );
 
-export const newsSettings = pgTable('news_settings', {
-  id: serial('id').primaryKey(),
-  guildId: text('guild_id').notNull(),
-  source: text('source').notNull(),
-  enabled: boolean('enabled').notNull().default(true),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-  updatedAt: timestamp('updated_at').notNull().defaultNow(),
-});
+export const newsSettings = pgTable(
+  'news_settings',
+  {
+    id: serial('id').primaryKey(),
+    guildId: text('guild_id').notNull(),
+    source: text('source').notNull(),
+    enabled: boolean('enabled').notNull().default(true),
+    channelId: varchar('channel_id', { length: 255 }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('news_settings_guild_source_unique').on(
+      table.guildId,
+      table.source,
+    ),
+  ],
+);

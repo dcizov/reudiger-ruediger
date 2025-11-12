@@ -4,11 +4,12 @@ import {
   ButtonStyle,
   ChannelType,
   EmbedBuilder,
+  MessageFlags,
   PermissionFlagsBits,
   SlashCommandBuilder,
   type ChatInputCommandInteraction,
 } from 'discord.js';
-import { and, eq, sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 
 import { db } from '../db/index';
 import {
@@ -51,8 +52,29 @@ export const setup: SubcommandCommand = {
         )
         .addChannelOption((option) =>
           option
-            .setName('news_channel')
-            .setDescription('📰 Where to post game news updates')
+            .setName('news_default')
+            .setDescription('📰 Default news channel (fallback for all games)')
+            .addChannelTypes(ChannelType.GuildText)
+            .setRequired(false),
+        )
+        .addChannelOption((option) =>
+          option
+            .setName('cs2_news')
+            .setDescription('🎮 CS2-specific news channel')
+            .addChannelTypes(ChannelType.GuildText)
+            .setRequired(false),
+        )
+        .addChannelOption((option) =>
+          option
+            .setName('wow_news')
+            .setDescription('🏰 WoW-specific news channel')
+            .addChannelTypes(ChannelType.GuildText)
+            .setRequired(false),
+        )
+        .addChannelOption((option) =>
+          option
+            .setName('valheim_news')
+            .setDescription('⚔️ Valheim-specific news channel')
             .addChannelTypes(ChannelType.GuildText)
             .setRequired(false),
         )
@@ -212,7 +234,7 @@ export const setup: SubcommandCommand = {
       default:
         await interaction.reply({
           content: '❌ Unknown subcommand.',
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
     }
   },
@@ -222,17 +244,97 @@ export const setup: SubcommandCommand = {
  * Handle /setup channels subcommand
  */
 async function handleChannels(interaction: ChatInputCommandInteraction) {
+  if (!interaction.guildId) {
+    await interaction.editReply({
+      content: '❌ This command can only be used in a server.',
+    });
+    return;
+  }
+
   const dealsChannel = interaction.options.getChannel('deals_channel', true);
-  const newsChannel = interaction.options.getChannel('news_channel', false);
+  const newsDefaultChannel = interaction.options.getChannel(
+    'news_default',
+    false,
+  );
+  const cs2NewsChannel = interaction.options.getChannel('cs2_news', false);
+  const wowNewsChannel = interaction.options.getChannel('wow_news', false);
+  const valheimNewsChannel = interaction.options.getChannel(
+    'valheim_news',
+    false,
+  );
   const logChannel = interaction.options.getChannel('log_channel', false);
 
   await setDealsChannelId(dealsChannel.id);
 
   let message = `✅ Deal channel set to <#${dealsChannel.id}>`;
 
-  if (newsChannel) {
-    await setNewsChannelId(newsChannel.id);
-    message += `\n📰 News channel set to <#${newsChannel.id}>`;
+  if (newsDefaultChannel) {
+    await setNewsChannelId(newsDefaultChannel.id);
+    message += `\n📰 Default news channel set to <#${newsDefaultChannel.id}>`;
+  }
+
+  const sourceChannelMap: {
+    source: keyof typeof AVAILABLE_NEWS_SOURCES;
+    channelId: string;
+    name: string;
+    icon: string;
+  }[] = [];
+
+  if (cs2NewsChannel) {
+    sourceChannelMap.push({
+      source: 'cs2',
+      channelId: cs2NewsChannel.id,
+      name: 'Counter-Strike 2',
+      icon: '🎮',
+    });
+  }
+
+  if (wowNewsChannel) {
+    sourceChannelMap.push({
+      source: 'wowRetail',
+      channelId: wowNewsChannel.id,
+      name: 'WoW Retail',
+      icon: '🏰',
+    });
+  }
+
+  if (valheimNewsChannel) {
+    sourceChannelMap.push({
+      source: 'valheim',
+      channelId: valheimNewsChannel.id,
+      name: 'Valheim',
+      icon: '⚔️',
+    });
+  }
+
+  // Database operations
+  for (const { source, channelId, name, icon } of sourceChannelMap) {
+    try {
+      await db
+        .insert(newsSettings)
+        .values({
+          guildId: interaction.guildId,
+          source,
+          enabled: true,
+          channelId,
+        })
+        .onConflictDoUpdate({
+          target: [newsSettings.guildId, newsSettings.source],
+          set: {
+            channelId,
+            enabled: true,
+            updatedAt: new Date(),
+          },
+        });
+
+      message += `\n${icon} ${name} news → <#${channelId}>`;
+    } catch (dbError) {
+      logger.error('Failed to save news setting:', {
+        error: dbError,
+        source,
+        channelId,
+      });
+    }
   }
 
   if (logChannel) {
@@ -240,9 +342,8 @@ async function handleChannels(interaction: ChatInputCommandInteraction) {
     message += `\n🧪 Log/debug channel set to <#${logChannel.id}>`;
   }
 
-  await interaction.reply({
+  await interaction.editReply({
     content: message,
-    ephemeral: true,
   });
 }
 
@@ -250,8 +351,6 @@ async function handleChannels(interaction: ChatInputCommandInteraction) {
  * Handle /setup roles subcommand
  */
 async function handleRoles(interaction: ChatInputCommandInteraction) {
-  await interaction.deferReply({ ephemeral: true });
-
   if (!interaction.guild) {
     await interaction.editReply(
       '❌ This command can only be used in a server.',
@@ -356,22 +455,34 @@ async function handleRoles(interaction: ChatInputCommandInteraction) {
  * Handle /setup schedule subcommand
  */
 async function handleSchedule(interaction: ChatInputCommandInteraction) {
+  if (interaction.replied) {
+    logger.debug('Interaction already processed, ignoring duplicate', {
+      interactionId: interaction.id,
+    });
+    return;
+  }
+
   const schedule = interaction.options.getString('cron', true);
 
   await setSchedule(schedule);
 
-  await interaction.reply({
-    content: `⏰ Cron schedule set to \`${schedule}\``,
-    ephemeral: true,
-  });
+  try {
+    await interaction.reply({
+      content: `⏰ Cron schedule set to \`${schedule}\``,
+      flags: MessageFlags.Ephemeral,
+    });
+  } catch (error) {
+    logger.warn('Could not reply to interaction (may be duplicate):', {
+      error,
+      interactionId: interaction.id,
+    });
+  }
 }
 
 /**
  * Handle /setup view subcommand
  */
 async function handleView(interaction: ChatInputCommandInteraction) {
-  await interaction.deferReply({ ephemeral: true });
-
   if (!interaction.guildId) {
     await interaction.editReply(
       '❌ This command can only be used in a server.',
@@ -382,13 +493,11 @@ async function handleView(interaction: ChatInputCommandInteraction) {
   const config = await getBotConfig();
   const logChannelId = await getLogChannelId();
 
-  // Get total subscription count
   const subCountResult = await db
     .select({ count: sql<number>`count(*)` })
     .from(subscriptions);
   const totalSubscriptions = Number(subCountResult[0]?.count ?? 0);
 
-  // Get reaction role messages with button counts
   const roleMessages = await db
     .select({
       messageId: reactionRoles.messageId,
@@ -399,7 +508,6 @@ async function handleView(interaction: ChatInputCommandInteraction) {
     .where(eq(reactionRoles.guildId, interaction.guildId))
     .orderBy(reactionRoles.createdAt);
 
-  // Get button counts for each message
   const roleMessagesWithCounts = await Promise.all(
     roleMessages.map(async (rm) => {
       const buttons = await db
@@ -414,32 +522,32 @@ async function handleView(interaction: ChatInputCommandInteraction) {
     }),
   );
 
-  // Get enabled news sources for this guild
-  const enabledNewsSources = await db
+  const allNewsSettings = await db
     .select()
     .from(newsSettings)
-    .where(
-      and(
-        eq(newsSettings.guildId, interaction.guildId),
-        eq(newsSettings.enabled, true),
-      ),
-    );
+    .where(eq(newsSettings.guildId, interaction.guildId));
 
-  // Format news sources display
+  const newsSourceLines: string[] = [];
+
+  for (const [key, source] of Object.entries(AVAILABLE_NEWS_SOURCES)) {
+    const setting = allNewsSettings.find((s) => s.source === key);
+
+    if (setting?.enabled === false) {
+      newsSourceLines.push(`~~${source.icon} ${source.name}~~ *(disabled)*`);
+    } else if (setting?.channelId) {
+      newsSourceLines.push(
+        `${source.icon} ${source.name} → <#${setting.channelId}>`,
+      );
+    } else {
+      newsSourceLines.push(`${source.icon} ${source.name} → *Default channel*`);
+    }
+  }
+
   const newsSourcesDisplay =
-    enabledNewsSources.length > 0
-      ? enabledNewsSources
-          .map((setting) => {
-            const source =
-              AVAILABLE_NEWS_SOURCES[
-                setting.source as keyof typeof AVAILABLE_NEWS_SOURCES
-              ];
-            return source ? `${source.icon} ${source.name}` : setting.source;
-          })
-          .join(', ')
-      : 'All sources enabled by default';
+    newsSourceLines.length > 0
+      ? newsSourceLines.join('\n')
+      : 'No sources configured';
 
-  // Format role messages display
   const roleMessagesDisplay =
     roleMessagesWithCounts.length > 0
       ? roleMessagesWithCounts
@@ -462,7 +570,7 @@ async function handleView(interaction: ChatInputCommandInteraction) {
         inline: true,
       },
       {
-        name: '📰 News Channel',
+        name: '📰 Default News Channel',
         value: config.newsChannelId
           ? `<#${config.newsChannelId}>`
           : '❌ Not configured',
@@ -489,7 +597,7 @@ async function handleView(interaction: ChatInputCommandInteraction) {
         inline: true,
       },
       {
-        name: '📰 Enabled News Sources',
+        name: '📰 News Sources & Channels',
         value: newsSourcesDisplay,
         inline: false,
       },
