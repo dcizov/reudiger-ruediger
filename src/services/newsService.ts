@@ -26,7 +26,6 @@ interface SteamNewsResponse {
   };
 }
 
-// All available news sources
 export const AVAILABLE_NEWS_SOURCES = {
   // Steam Games
   cs2: {
@@ -48,69 +47,15 @@ export const AVAILABLE_NEWS_SOURCES = {
     description: 'Official Valheim updates from Steam',
   },
 
-  // WoW - Retail
+  // World of Warcraft
   wowRetail: {
     type: 'rss' as const,
-    url: 'https://www.wowhead.com/news/rss/tag/live',
-    name: 'WoW Retail (Live)',
+    url: 'https://www.wowhead.com/news/rss/retail',
+    name: 'WoW Retail',
     category: 'World of Warcraft',
     color: 0x00aeff,
     icon: '🏰',
-    description: 'Current WoW expansion news',
-  },
-  wowPTR: {
-    type: 'rss' as const,
-    url: 'https://www.wowhead.com/news/rss/tag/ptr',
-    name: 'WoW PTR',
-    category: 'World of Warcraft',
-    color: 0xff6b00,
-    icon: '🧪',
-    description: 'Public Test Realm updates',
-  },
-  wowBeta: {
-    type: 'rss' as const,
-    url: 'https://www.wowhead.com/news/rss/tag/beta',
-    name: 'WoW Beta',
-    category: 'World of Warcraft',
-    color: 0x9d00ff,
-    icon: '🔮',
-    description: 'Beta and Alpha testing news',
-  },
-  wowClassic: {
-    type: 'rss' as const,
-    url: 'https://www.wowhead.com/news/rss/tag/classic',
-    name: 'WoW Classic',
-    category: 'World of Warcraft',
-    color: 0xc79c6e,
-    icon: '🗡️',
-    description: 'WoW Classic news and updates',
-  },
-  wowBlue: {
-    type: 'rss' as const,
-    url: 'https://www.wowhead.com/news/rss/tag/blue-post',
-    name: 'WoW Blue Tracker',
-    category: 'World of Warcraft',
-    color: 0x0078ff,
-    icon: '💬',
-    description: 'Official Blizzard communications',
-  },
-  wowHotfixes: {
-    type: 'rss' as const,
-    url: 'https://www.wowhead.com/news/rss/tag/hotfixes',
-    name: 'WoW Hotfixes',
-    category: 'World of Warcraft',
-    color: 0xff3333,
-    icon: '🔥',
-    description: 'Weekly hotfix updates',
-  },
-  wowGuides: {
-    type: 'rss' as const,
-    url: 'https://www.wowhead.com/news/rss/tag/guides',
-    name: 'WoW Guides',
-    category: 'World of Warcraft',
-    color: 0x00c851,
-    icon: '📚',
-    description: 'Strategy guides and tips',
+    description: 'WoW Retail news from Wowhead',
   },
 } as const;
 
