@@ -24,7 +24,6 @@ export async function startDealScheduler(client: Client): Promise<void> {
   const config = await getBotConfig();
   const dealSchedule = config.schedule || '*/30 * * * *';
 
-  // ✅ Deals scheduler
   currentTask = cron.schedule(dealSchedule, () => {
     void (async () => {
       const posted = await postNewDeals(client, 5);
@@ -32,7 +31,6 @@ export async function startDealScheduler(client: Client): Promise<void> {
     })();
   });
 
-  // ✅ Cleanup expired deals - hourly
   cleanupTask = cron.schedule('0 * * * *', () => {
     void (async () => {
       const removed = await cleanupExpiredDeals(client);
@@ -41,7 +39,6 @@ export async function startDealScheduler(client: Client): Promise<void> {
     })();
   });
 
-  // ✅ Subscription checks - every 15 minutes
   subscriptionTask = cron.schedule('*/15 * * * *', () => {
     void (async () => {
       const notified = await checkSubscriptionsAndNotify(client);
@@ -52,16 +49,16 @@ export async function startDealScheduler(client: Client): Promise<void> {
     })();
   });
 
-  // ✅ NEWS: Check every 15 minutes (more frequent for timely news)
   newsTask = cron.schedule('*/15 * * * *', () => {
     void (async () => {
+      logger.debug('🔍 Running scheduled news check...');
       const posted = await checkGameNews(client);
-      if (posted > 0)
+      if (posted > 0) {
         logger.info(`📰 Posted ${posted} news item(s).`, { posted });
+      }
     })();
   });
 
-  // ✅ NEWS: Cleanup old posted news daily at 3 AM
   newsCleanupTask = cron.schedule('0 3 * * *', () => {
     void (async () => {
       const cleaned = await cleanupOldPostedNews();

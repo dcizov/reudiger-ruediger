@@ -656,6 +656,8 @@ export async function checkGameNews(
 
   if (totalPosted > 0) {
     logger.info(`📰 Posted ${totalPosted} news item(s)`, { totalPosted });
+  } else {
+    logger.debug('📰 News check complete - no new articles to post');
   }
 
   return totalPosted;
