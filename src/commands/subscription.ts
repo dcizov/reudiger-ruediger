@@ -12,6 +12,7 @@ import { subscriptions, userSettings } from '../db/schema';
 import type { SubcommandCommand } from '../types/command';
 import { getItadGameId, getItadGameOverview } from '../utils/itadPrice';
 import { searchItadGames } from '../utils/itadSearch';
+import { logger } from '../utils/logger';
 
 const MAX_SUBSCRIPTIONS_PER_USER = 20;
 
@@ -84,26 +85,49 @@ export const subscription: SubcommandCommand = {
     ),
 
   async execute(interaction: ChatInputCommandInteraction) {
-    const subcommand = interaction.options.getSubcommand();
+    try {
+      const subcommand = interaction.options.getSubcommand();
 
-    switch (subcommand) {
-      case 'add':
-        return handleAdd(interaction);
-      case 'remove':
-        return handleRemove(interaction);
-      case 'clear':
-        return handleClear(interaction);
-      case 'list':
-        return handleList(interaction);
-      case 'update':
-        return handleUpdate(interaction);
-      case 'notify':
-        return handleNotify(interaction);
-      default:
-        await interaction.reply({
-          content: '❌ Unknown subcommand.',
-          flags: MessageFlags.Ephemeral,
-        });
+      switch (subcommand) {
+        case 'add':
+          return await handleAdd(interaction);
+        case 'remove':
+          return await handleRemove(interaction);
+        case 'clear':
+          return await handleClear(interaction);
+        case 'list':
+          return await handleList(interaction);
+        case 'update':
+          return await handleUpdate(interaction);
+        case 'notify':
+          return await handleNotify(interaction);
+        default:
+          await interaction.reply({
+            content: '❌ Unknown subcommand.',
+            flags: MessageFlags.Ephemeral,
+          });
+      }
+    } catch (error) {
+      logger.error('Subscription command error:', {
+        error,
+        subcommand: interaction.options.getSubcommand(),
+        userId: interaction.user.id,
+      });
+
+      const errorMsg = '❌ An error occurred while processing your request.';
+
+      try {
+        if (interaction.deferred && !interaction.replied) {
+          await interaction.editReply(errorMsg);
+        } else if (!interaction.replied) {
+          await interaction.reply({
+            content: errorMsg,
+            flags: MessageFlags.Ephemeral,
+          });
+        }
+      } catch (replyError) {
+        logger.error('Could not send error message:', { error: replyError });
+      }
     }
   },
 
@@ -132,6 +156,10 @@ export const subscription: SubcommandCommand = {
   },
 };
 
+/**
+ * Handle /subscription add - subscribes user to game price alerts
+ * Defers reply due to external API calls
+ */
 async function handleAdd(interaction: ChatInputCommandInteraction) {
   const title = interaction.options.getString('title', true);
   const userId = interaction.user.id;
@@ -226,6 +254,10 @@ async function handleAdd(interaction: ChatInputCommandInteraction) {
   await interaction.editReply({ content: reply });
 }
 
+/**
+ * Handle /subscription remove - unsubscribes from a single game
+ * No defer needed - simple DB operation
+ */
 async function handleRemove(interaction: ChatInputCommandInteraction) {
   const title = interaction.options.getString('title', true);
   const userId = interaction.user.id;
@@ -253,6 +285,10 @@ async function handleRemove(interaction: ChatInputCommandInteraction) {
   });
 }
 
+/**
+ * Handle /subscription clear - removes all user subscriptions
+ * No defer needed - simple DB operation
+ */
 async function handleClear(interaction: ChatInputCommandInteraction) {
   const userId = interaction.user.id;
 
@@ -276,6 +312,10 @@ async function handleClear(interaction: ChatInputCommandInteraction) {
   });
 }
 
+/**
+ * Handle /subscription list - displays all user subscriptions
+ * No defer needed - simple DB query
+ */
 async function handleList(interaction: ChatInputCommandInteraction) {
   const subs = await db.query.subscriptions.findMany({
     where: eq(subscriptions.userId, interaction.user.id),
@@ -309,6 +349,10 @@ async function handleList(interaction: ChatInputCommandInteraction) {
   });
 }
 
+/**
+ * Handle /subscription update - updates price threshold
+ * No defer needed - simple DB update
+ */
 async function handleUpdate(interaction: ChatInputCommandInteraction) {
   const title = interaction.options.getString('title', true);
   const newPrice = interaction.options.getNumber('new_price', true);
@@ -341,6 +385,10 @@ async function handleUpdate(interaction: ChatInputCommandInteraction) {
   });
 }
 
+/**
+ * Handle /subscription notify - toggles notifications on/off
+ * No defer needed - simple DB operation
+ */
 async function handleNotify(interaction: ChatInputCommandInteraction) {
   const userId = interaction.user.id;
 

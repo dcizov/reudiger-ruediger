@@ -35,7 +35,6 @@ const client = new Client({
 function handleReady(readyClient: Client<true>): void {
   logger.info(`✅ Discord bot is ready! Logged in as ${readyClient.user.tag}`);
 
-  // Set bot status
   readyClient.user.setPresence({
     activities: [
       {
@@ -56,7 +55,6 @@ client.once(Events.ClientReady, handleReady);
 
 client.on(Events.InteractionCreate, (interaction: Interaction) => {
   void (async () => {
-    // Handle autocomplete
     if (interaction.isAutocomplete()) {
       const command = commands[interaction.commandName];
       if (command?.autocomplete) {
@@ -74,14 +72,10 @@ client.on(Events.InteractionCreate, (interaction: Interaction) => {
 
     if (interaction.isButton()) {
       try {
-        // Extract the actual buttonId by removing the prefix if needed
         let buttonId = interaction.customId;
-
-        // Check if this is from /roles command
         const isRolesCommand = interaction.customId.startsWith('role_button_');
 
         if (isRolesCommand) {
-          // Strip the 'role_button_' prefix to get the actual buttonId
           buttonId = interaction.customId.replace('role_button_', '');
         }
 
@@ -103,7 +97,6 @@ client.on(Events.InteractionCreate, (interaction: Interaction) => {
           return;
         }
 
-        // Check cooldown for /roles command buttons
         if (isRolesCommand) {
           const cooldownCheck = await checkUserRoleCooldown(
             interaction.user.id,
@@ -117,7 +110,6 @@ client.on(Events.InteractionCreate, (interaction: Interaction) => {
             return;
           }
 
-          // Check if role is required (can't be toggled off)
           if (buttonData.required) {
             await interaction.reply({
               content: '🔒 This role is required and cannot be removed.',
@@ -159,7 +151,6 @@ client.on(Events.InteractionCreate, (interaction: Interaction) => {
           });
         }
 
-        // Update cooldown for /roles command buttons
         if (isRolesCommand) {
           await updateUserRoleCooldown(
             interaction.user.id,
@@ -180,7 +171,6 @@ client.on(Events.InteractionCreate, (interaction: Interaction) => {
 
     if (interaction.isStringSelectMenu()) {
       try {
-        // Handle role select menu from /roles command
         if (interaction.customId.startsWith('role_select_')) {
           if (!interaction.guild || !interaction.member) {
             await interaction.reply({
@@ -190,7 +180,6 @@ client.on(Events.InteractionCreate, (interaction: Interaction) => {
             return;
           }
 
-          // Check cooldown
           const cooldownCheck = await checkUserRoleCooldown(
             interaction.user.id,
             interaction.guild.id,
@@ -214,13 +203,9 @@ client.on(Events.InteractionCreate, (interaction: Interaction) => {
             return;
           }
 
-          // Get all selected button IDs
           const selectedButtonIds = interaction.values;
-
-          // Fetch all button data for this guild to get role IDs
           const allRoles = await getAllRolesInGuild(interaction.guild.id);
 
-          // Map selected button IDs to role IDs
           const selectedRoleIds = new Set(
             allRoles
               .filter((r: ReactionRoleButton) =>
@@ -229,12 +214,10 @@ client.on(Events.InteractionCreate, (interaction: Interaction) => {
               .map((r: ReactionRoleButton) => r.roleId),
           );
 
-          // Get roles that should be managed (exclude required roles)
           const managedRoles = allRoles.filter(
             (r: ReactionRoleButton) => !r.required,
           );
 
-          // Determine which roles to add and remove
           const rolesToAdd: string[] = [];
           const rolesToRemove: string[] = [];
 
@@ -249,7 +232,6 @@ client.on(Events.InteractionCreate, (interaction: Interaction) => {
             }
           }
 
-          // Apply role changes
           if (rolesToAdd.length > 0) {
             await member.roles.add(rolesToAdd);
           }
@@ -257,13 +239,11 @@ client.on(Events.InteractionCreate, (interaction: Interaction) => {
             await member.roles.remove(rolesToRemove);
           }
 
-          // Update cooldown
           await updateUserRoleCooldown(
             interaction.user.id,
             interaction.guild.id,
           );
 
-          // Build response message
           const changes: string[] = [];
           if (rolesToAdd.length > 0) {
             const addedRoleNames = rolesToAdd
@@ -309,31 +289,12 @@ client.on(Events.InteractionCreate, (interaction: Interaction) => {
       const command = commands[interaction.commandName];
       if (!command) return;
 
-      // Guard against duplicate
       if (interaction.deferred || interaction.replied) {
         logger.debug('Interaction already processed', {
           commandName: interaction.commandName,
           interactionId: interaction.id,
         });
         return;
-      }
-
-      // ✅ DEFER IMMEDIATELY FOR ALL COMMANDS
-      // This prevents timeout before reaching the handler
-      const needsDefer = ['setup', 'compare', 'subscription'].includes(
-        interaction.commandName,
-      );
-
-      if (needsDefer) {
-        try {
-          await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-        } catch (error) {
-          logger.warn('Could not defer interaction:', {
-            error,
-            commandName: interaction.commandName,
-          });
-          return;
-        }
       }
 
       try {
@@ -385,7 +346,6 @@ client.login(env.DISCORD_TOKEN).catch((err: unknown) => {
   process.exit(1);
 });
 
-// Graceful shutdown handlers
 async function gracefulShutdown(signal: string): Promise<void> {
   logger.info(`\n${signal} received, shutting down gracefully...`);
   stopDealScheduler();
@@ -397,7 +357,6 @@ async function gracefulShutdown(signal: string): Promise<void> {
 process.on('SIGTERM', () => void gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => void gracefulShutdown('SIGINT'));
 
-// Conditionally start webhook server
 if (isDev || env.ENABLE_WEBHOOK_SERVER) {
   startWebhookServer();
 }

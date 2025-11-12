@@ -220,22 +220,38 @@ export const setup: SubcommandCommand = {
     ),
 
   async execute(interaction: ChatInputCommandInteraction) {
-    const subcommand = interaction.options.getSubcommand();
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-    switch (subcommand) {
-      case 'channels':
-        return handleChannels(interaction);
-      case 'roles':
-        return handleRoles(interaction);
-      case 'schedule':
-        return handleSchedule(interaction);
-      case 'view':
-        return handleView(interaction);
-      default:
-        await interaction.reply({
-          content: '❌ Unknown subcommand.',
-          flags: MessageFlags.Ephemeral,
+    try {
+      const subcommand = interaction.options.getSubcommand();
+
+      switch (subcommand) {
+        case 'channels':
+          return await handleChannels(interaction);
+        case 'roles':
+          return await handleRoles(interaction);
+        case 'schedule':
+          return await handleSchedule(interaction);
+        case 'view':
+          return await handleView(interaction);
+        default:
+          await interaction.editReply({
+            content: '❌ Unknown subcommand.',
+          });
+      }
+    } catch (error) {
+      logger.error('Setup command error:', {
+        error,
+        subcommand: interaction.options.getSubcommand(),
+      });
+
+      try {
+        await interaction.editReply({
+          content: '❌ An error occurred while processing your request.',
         });
+      } catch (replyError) {
+        logger.error('Could not send error message:', { error: replyError });
+      }
     }
   },
 };
@@ -307,7 +323,6 @@ async function handleChannels(interaction: ChatInputCommandInteraction) {
     });
   }
 
-  // Database operations
   for (const { source, channelId, name, icon } of sourceChannelMap) {
     try {
       await db
@@ -455,28 +470,13 @@ async function handleRoles(interaction: ChatInputCommandInteraction) {
  * Handle /setup schedule subcommand
  */
 async function handleSchedule(interaction: ChatInputCommandInteraction) {
-  if (interaction.replied) {
-    logger.debug('Interaction already processed, ignoring duplicate', {
-      interactionId: interaction.id,
-    });
-    return;
-  }
-
   const schedule = interaction.options.getString('cron', true);
 
   await setSchedule(schedule);
 
-  try {
-    await interaction.reply({
-      content: `⏰ Cron schedule set to \`${schedule}\``,
-      flags: MessageFlags.Ephemeral,
-    });
-  } catch (error) {
-    logger.warn('Could not reply to interaction (may be duplicate):', {
-      error,
-      interactionId: interaction.id,
-    });
-  }
+  await interaction.editReply({
+    content: `⏰ Cron schedule set to \`${schedule}\``,
+  });
 }
 
 /**
