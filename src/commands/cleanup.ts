@@ -5,7 +5,10 @@ import {
   SlashCommandBuilder,
   type ChatInputCommandInteraction,
 } from 'discord.js';
+import { and, eq } from 'drizzle-orm';
 
+import { db } from '../db';
+import { postedNews } from '../db/schema';
 import { cleanupExpiredDeals } from '../services/cleanupDeals';
 import { cleanupRoles } from '../services/cleanupRoles';
 import { cleanupOldPostedNews } from '../services/newsService';
@@ -26,6 +29,25 @@ export const cleanup: SubcommandCommand = {
       subcommand
         .setName('news')
         .setDescription('Remove old posted news entries (older than 30 days)'),
+    )
+    .addSubcommand((subcommand) =>
+      subcommand
+        .setName('news-source')
+        .setDescription(
+          'Clear posted news for a specific source to allow reposting',
+        )
+        .addStringOption((option) =>
+          option
+            .setName('source')
+            .setDescription('News source to clear')
+            .setRequired(true)
+            .addChoices(
+              { name: '🎮 Counter-Strike 2', value: 'cs2' },
+              { name: '⚔️ Valheim', value: 'valheim' },
+              { name: '🏰 WoW Retail', value: 'wowRetail' },
+              { name: '🔨 WoW In Development', value: 'wowInDev' },
+            ),
+        ),
     )
     .addSubcommand((subcommand) =>
       subcommand
@@ -50,6 +72,8 @@ export const cleanup: SubcommandCommand = {
         return handleDealsCleanup(interaction);
       case 'news':
         return handleNewsCleanup(interaction);
+      case 'news-source':
+        return handleNewsSourceCleanup(interaction);
       case 'roles':
         return handleRolesCleanup(interaction);
       case 'all':
@@ -106,6 +130,50 @@ async function handleNewsCleanup(interaction: ChatInputCommandInteraction) {
     logger.error('News cleanup error:', { error });
     await interaction.editReply({
       content: '❌ Failed to cleanup news entries due to an error.',
+    });
+  }
+}
+
+/**
+ * Handle /cleanup news-source subcommand
+ */
+async function handleNewsSourceCleanup(
+  interaction: ChatInputCommandInteraction,
+) {
+  if (!interaction.guildId) {
+    await interaction.editReply({
+      content: '❌ This command must be used in a server.',
+    });
+    return;
+  }
+
+  const source = interaction.options.getString('source', true);
+
+  try {
+    const result = await db
+      .delete(postedNews)
+      .where(
+        and(
+          eq(postedNews.source, source),
+          eq(postedNews.guildId, interaction.guildId),
+        ),
+      );
+
+    const deleted = result.length;
+
+    if (deleted === 0) {
+      await interaction.editReply({
+        content: `✅ No posted news found for **${source}**.`,
+      });
+    } else {
+      await interaction.editReply({
+        content: `🗑️ Cleared **${deleted}** posted news entr${deleted === 1 ? 'y' : 'ies'} for **${source}**.\n\nThese articles will be reposted on the next news check.`,
+      });
+    }
+  } catch (error) {
+    logger.error('News source cleanup error:', { error, source });
+    await interaction.editReply({
+      content: '❌ Failed to cleanup news source due to an error.',
     });
   }
 }
