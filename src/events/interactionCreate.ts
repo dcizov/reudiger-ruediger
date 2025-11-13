@@ -1,5 +1,4 @@
-import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { URL } from 'node:url';
 import { Events, MessageFlags, type Interaction } from 'discord.js';
 
 import { startDealScheduler } from '../services/schedulerService';
@@ -14,24 +13,16 @@ import {
   type ReactionRoleButton,
 } from '../utils/reactionRoles';
 
-let commands: Awaited<ReturnType<typeof loadCommands>> | null = null;
+const commands = await loadCommands(new URL('../commands/', import.meta.url));
 
-async function getCommands() {
-  if (!commands) {
-    const commandsPath = path.join(__dirname, '../commands');
-    commands = await loadCommands(pathToFileURL(commandsPath));
-    logger.info(
-      `📦 Loaded ${commands.size} commands: ${[...commands.keys()].join(', ')}`,
-    );
-  }
-  return commands;
-}
+logger.info(
+  `📦 Loaded ${commands.size} commands: ${[...commands.keys()].join(', ')}`,
+);
 
 export default {
   name: Events.InteractionCreate,
   async execute(interaction: Interaction) {
     if (interaction.isAutocomplete()) {
-      const commands = await getCommands();
       const command = commands.get(interaction.commandName);
       if (command?.autocomplete) {
         try {
@@ -262,7 +253,6 @@ export default {
     }
 
     if (interaction.isChatInputCommand()) {
-      const commands = await getCommands();
       const command = commands.get(interaction.commandName);
 
       if (!command) {

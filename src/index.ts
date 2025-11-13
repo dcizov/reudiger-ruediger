@@ -1,6 +1,5 @@
-import path from 'node:path';
 import process from 'node:process';
-import { pathToFileURL } from 'node:url';
+import { URL } from 'node:url';
 import { Client, GatewayIntentBits } from 'discord.js';
 
 import { env, isDev } from './config';
@@ -18,42 +17,34 @@ const client = new Client({
   ],
 });
 
-void (async () => {
-  try {
-    const eventsPath = path.join(__dirname, 'events');
-    const events = await loadEvents(pathToFileURL(eventsPath));
+const events = await loadEvents(new URL('events/', import.meta.url));
 
-    logger.info(`📦 Registering ${events.length} event handlers...`);
+logger.info(`📦 Registering ${events.length} event handlers...`);
 
-    for (const event of events) {
-      const eventHandler = async (...args: unknown[]) => {
-        try {
-          await event.execute(...(args as Parameters<typeof event.execute>));
-        } catch (error) {
-          logger.error(`Error executing event ${String(event.name)}:`, {
-            error,
-          });
-        }
-      };
-
-      if (event.once) {
-        client.once(event.name, (...args) => void eventHandler(...args));
-      } else {
-        client.on(event.name, (...args) => void eventHandler(...args));
-      }
+for (const event of events) {
+  const eventHandler = async (...args: unknown[]) => {
+    try {
+      await event.execute(...(args as Parameters<typeof event.execute>));
+    } catch (error) {
+      logger.error(`Error executing event ${String(event.name)}:`, {
+        error,
+      });
     }
+  };
 
-    if (!env.DISCORD_TOKEN) {
-      logger.error('❌ DISCORD_TOKEN is missing from config.');
-      process.exit(1);
-    }
-
-    await client.login(env.DISCORD_TOKEN);
-  } catch (err) {
-    logger.error('❌ Failed to initialize bot:', { error: err });
-    process.exit(1);
+  if (event.once) {
+    client.once(event.name, (...args) => void eventHandler(...args));
+  } else {
+    client.on(event.name, (...args) => void eventHandler(...args));
   }
-})();
+}
+
+if (!env.DISCORD_TOKEN) {
+  logger.error('❌ DISCORD_TOKEN is missing from config.');
+  process.exit(1);
+}
+
+await client.login(env.DISCORD_TOKEN);
 
 async function gracefulShutdown(signal: string): Promise<void> {
   logger.info(`\n${signal} received, shutting down gracefully...`);
