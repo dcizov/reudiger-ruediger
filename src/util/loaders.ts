@@ -3,10 +3,10 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { glob } from 'glob';
 
-import type { Command, SubcommandCommand } from '../types/command';
-import { isValidCommand } from '../types/command';
-import type { Event } from '../types/event';
-import { isValidEvent } from '../types/event';
+import type { Command, SubcommandCommand } from '../commands/index.js';
+import { isValidCommand } from '../commands/index.js';
+import type { Event } from '../events/index.js';
+import { isValidEvent } from '../events/index.js';
 
 type PathLike = string | URL;
 
@@ -30,13 +30,13 @@ export async function loadStructures<Structure>(
   recursive = true,
 ): Promise<Structure[]> {
   const statDir = await stat(dir);
+  const basePath = dir instanceof URL ? fileURLToPath(dir) : dir.toString();
 
   if (!statDir.isDirectory()) {
-    throw new Error(`The directory '${dir}' is not a directory.`);
+    throw new Error(`The directory '${basePath}' is not a directory.`);
   }
 
   const structures: Structure[] = [];
-  const basePath = dir instanceof URL ? fileURLToPath(dir) : dir.toString();
 
   const extension = process.env.NODE_ENV === 'production' ? 'js' : 'ts';
   const pattern = resolve(

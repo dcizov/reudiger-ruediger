@@ -6,9 +6,9 @@ import {
   SlashCommandBuilder,
 } from 'discord.js';
 
-import type { Command } from '../types/command';
+import type { Command } from './index.js';
 
-export const help: Command = {
+export default {
   data: new SlashCommandBuilder()
     .setName('help')
     .setDescription('Show help and list all available commands'),
@@ -101,4 +101,4 @@ export const help: Command = {
 
     await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
   },
-};
+} satisfies Command;

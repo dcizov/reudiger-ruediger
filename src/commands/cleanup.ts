@@ -7,15 +7,15 @@ import {
 } from 'discord.js';
 import { and, eq } from 'drizzle-orm';
 
-import { db } from '../db';
-import { postedNews } from '../db/schema';
-import { cleanupExpiredDeals } from '../services/cleanupDeals';
-import { cleanupRoles } from '../services/cleanupRoles';
-import { cleanupOldPostedNews } from '../services/newsService';
-import type { SubcommandCommand } from '../types/command';
-import { logger } from '../utils/logger';
+import { db } from '../db/index.js';
+import { postedNews } from '../db/schema.js';
+import { cleanupExpiredDeals } from '../services/cleanupDeals.js';
+import { cleanupRoles } from '../services/cleanupRoles.js';
+import { cleanupOldPostedNews } from '../services/newsService.js';
+import type { SubcommandCommand } from './index.js';
+import { logger } from '../util/logger.js';
 
-export const cleanup: SubcommandCommand = {
+export default {
   data: new SlashCommandBuilder()
     .setName('cleanup')
     .setDescription('Admin: Cleanup and maintenance operations')
@@ -84,7 +84,7 @@ export const cleanup: SubcommandCommand = {
         });
     }
   },
-};
+} satisfies SubcommandCommand;
 
 /**
  * Handle /cleanup deals subcommand

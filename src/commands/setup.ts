@@ -11,15 +11,15 @@ import {
 } from 'discord.js';
 import { eq, sql } from 'drizzle-orm';
 
-import { db } from '../db/index';
+import { db } from '../db/index.js';
 import {
   newsSettings,
   reactionRoleButtons,
   reactionRoles,
   subscriptions,
-} from '../db/schema';
-import { AVAILABLE_NEWS_SOURCES } from '../services/newsService';
-import type { SubcommandCommand } from '../types/command';
+} from '../db/schema.js';
+import { AVAILABLE_NEWS_SOURCES } from '../services/newsService.js';
+import type { SubcommandCommand } from './index.js';
 import {
   getBotConfig,
   getLogChannelId,
@@ -27,14 +27,14 @@ import {
   setLogChannelId,
   setNewsChannelId,
   setSchedule,
-} from '../utils/botConfig';
-import { logger } from '../utils/logger';
+} from '../util/botConfig.js';
+import { logger } from '../util/logger.js';
 import {
   addReactionRoleButton,
   addReactionRoleMessage,
-} from '../utils/reactionRoles';
+} from '../util/reactionRoles.js';
 
-export const setup: SubcommandCommand = {
+export default {
   data: new SlashCommandBuilder()
     .setName('setup')
     .setDescription('Admin: Configure bot settings')
@@ -261,7 +261,7 @@ export const setup: SubcommandCommand = {
       }
     }
   },
-};
+} satisfies SubcommandCommand;
 
 /**
  * Handle /setup channels subcommand

@@ -3,9 +3,9 @@ import { z } from 'zod';
 import {
   CheapSharkDealsResponseSchema,
   type CheapSharkDeal,
-} from '../schemas/cheapshark';
-import { logger } from './logger';
-import { fetchWithRetry } from './retryFetch';
+} from '../schemas/cheapshark.js';
+import { logger } from './logger.js';
+import { fetchWithRetry } from './retryFetch.js';
 
 export type { CheapSharkDeal };
 

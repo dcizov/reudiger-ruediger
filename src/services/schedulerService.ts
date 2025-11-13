@@ -1,12 +1,16 @@
 import type { Client } from 'discord.js';
 import cron, { type ScheduledTask } from 'node-cron';
 
-import { getBotConfig } from '../utils/botConfig';
-import { logger } from '../utils/logger';
-import { cleanupExpiredDeals } from './cleanupDeals';
-import { checkGameNews, cleanupOldPostedNews } from './newsService';
-import { postNewDeals } from './postNewDeals';
-import { checkSubscriptionsAndNotify } from './subscriptionChecker';
+import { getBotConfig } from '../util/botConfig.js';
+import { logger } from '../util/logger.js';
+import { cleanupExpiredDeals } from './cleanupDeals.js';
+import {
+  checkGameNews,
+  cleanupExpiredRssCache,
+  cleanupOldPostedNews,
+} from './newsService.js';
+import { postNewDeals } from './postNewDeals.js';
+import { checkSubscriptionsAndNotify } from './subscriptionChecker.js';
 
 let currentTask: ScheduledTask | null = null;
 let cleanupTask: ScheduledTask | null = null;
@@ -64,6 +68,9 @@ export async function startDealScheduler(client: Client): Promise<void> {
       const cleaned = await cleanupOldPostedNews();
       if (cleaned > 0)
         logger.info(`🗑️ Cleaned up ${cleaned} old news entries.`, { cleaned });
+
+      // Clean up expired RSS cache entries to prevent memory leaks
+      cleanupExpiredRssCache();
     })();
   });
 

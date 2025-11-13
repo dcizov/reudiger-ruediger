@@ -1,7 +1,7 @@
 import type { Client } from 'discord.js';
 import Transport from 'winston-transport';
 
-import { getLogChannelId } from './botConfig';
+import { getLogChannelId } from './botConfig.js';
 
 interface DiscordTransportOptions extends Transport.TransportStreamOptions {
   client?: Client;

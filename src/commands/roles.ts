@@ -9,15 +9,16 @@ import {
   type ChatInputCommandInteraction,
 } from 'discord.js';
 
-import type { Command } from '../types/command';
-import { logger } from '../utils/logger';
+import type { Command } from './index.js';
+import { logger } from '../util/logger.js';
 import {
   checkUserRoleCooldown,
   getAllRolesInGuild,
   groupRolesByCategory,
-} from '../utils/reactionRoles';
+} from '../util/reactionRoles.js';
+import { isGuildMember } from '../util/typeGuards.js';
 
-export const roles: Command = {
+export default {
   data: new SlashCommandBuilder()
     .setName('roles')
     .setDescription('Manage your server roles'),
@@ -44,6 +45,17 @@ export const roles: Command = {
         return;
       }
 
+      // Verify this is a guild member with role management
+      if (!isGuildMember(interaction.member)) {
+        await interaction.editReply({
+          content: '❌ This command can only be used in a server.',
+        });
+        return;
+      }
+
+      // Store member in const for type narrowing
+      const member = interaction.member;
+
       const allRoles = await getAllRolesInGuild(guildId);
 
       if (allRoles.length === 0) {
@@ -53,23 +65,9 @@ export const roles: Command = {
         return;
       }
 
-      const userRoles = allRoles.filter((roleButton) => {
-        if (
-          typeof interaction.member === 'object' &&
-          interaction.member !== null &&
-          'roles' in interaction.member &&
-          typeof interaction.member.roles === 'object' &&
-          interaction.member.roles !== null &&
-          'cache' in interaction.member.roles
-        ) {
-          const rolesCache = interaction.member.roles.cache as Map<
-            string,
-            unknown
-          >;
-          return rolesCache.has(roleButton.roleId);
-        }
-        return false;
-      });
+      const userRoles = allRoles.filter((roleButton) =>
+        member.roles.cache.has(roleButton.roleId),
+      );
 
       const hasAnyRole = userRoles.length > 0;
       const availableRoles = allRoles.filter((role) => {
@@ -190,4 +188,4 @@ export const roles: Command = {
       }
     }
   },
-};
+} satisfies Command;

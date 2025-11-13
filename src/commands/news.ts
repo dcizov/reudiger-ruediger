@@ -12,10 +12,10 @@ import {
   getNewsSourceStatus,
   toggleNewsSource,
   type NewsSourceKey,
-} from '../services/newsService';
-import type { SubcommandCommand } from '../types/command';
+} from '../services/newsService.js';
+import type { SubcommandCommand } from './index.js';
 
-export const news: SubcommandCommand = {
+export default {
   data: new SlashCommandBuilder()
     .setName('news')
     .setDescription('Admin: Configure news sources')
@@ -110,7 +110,7 @@ export const news: SubcommandCommand = {
         });
     }
   },
-};
+} satisfies SubcommandCommand;
 
 async function handleList(interaction: ChatInputCommandInteraction) {
   if (!interaction.guildId) return;

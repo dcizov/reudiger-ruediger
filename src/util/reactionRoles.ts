@@ -1,13 +1,14 @@
 import { and, eq, inArray } from 'drizzle-orm';
 
-import { db } from '../db';
+import { db } from '../db/index.js';
 import {
   reactionRoleButtons,
   reactionRoles,
   userRoleCooldowns,
-} from '../db/schema';
+} from '../db/schema.js';
 
 type ReactionRoleButton = typeof reactionRoleButtons.$inferSelect;
+type ReactionRole = typeof reactionRoles.$inferSelect;
 
 export async function addReactionRoleMessage(
   messageId: string,
@@ -69,7 +70,7 @@ export async function getAllRolesInGuild(
     return [];
   }
 
-  const messageIds = messages.map((m) => m.messageId);
+  const messageIds = messages.map((m: ReactionRole) => m.messageId);
   const buttons = await db.query.reactionRoleButtons.findMany({
     where: inArray(reactionRoleButtons.messageId, messageIds),
   });

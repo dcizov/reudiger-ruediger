@@ -1,8 +1,11 @@
 import { z } from 'zod';
 
-import { ItadSearchResponseSchema } from '../schemas/itadSearch';
-import { logger } from './logger';
-import { fetchWithRetry } from './retryFetch';
+import {
+  type ItadSearchResultItem,
+  ItadSearchResponseSchema,
+} from '../schemas/itadSearch.js';
+import { logger } from './logger.js';
+import { fetchWithRetry } from './retryFetch.js';
 
 function redactApiKey(url: string): string {
   return url.replace(/key=[^&]+/, 'key=[REDACTED]');
@@ -34,7 +37,7 @@ export async function searchItadGames(
       return [];
     }
 
-    return result.data.map((item) => item.title);
+    return result.data.map((item: ItadSearchResultItem) => item.title);
   } catch (error) {
     logger.error('Failed to search ITAD games:', { error });
     return [];

@@ -3,17 +3,24 @@ import type { Client, TextChannel } from 'discord.js';
 import { EmbedBuilder } from 'discord.js';
 import { and, eq, lt } from 'drizzle-orm';
 
-import { db } from '../db';
-import { newsSettings, postedNews } from '../db/schema';
+import { db } from '../db/index.js';
+import { newsSettings, postedNews } from '../db/schema.js';
 import {
   FeedEntrySchema,
   FeedResponseSchema,
   SteamNewsResponseSchema,
   type RSSFeedItem,
   type SteamNewsItem,
-} from '../schemas/news';
-import { getBotConfig } from '../utils/botConfig';
-import { logger } from '../utils/logger';
+} from '../schemas/news.js';
+import { getBotConfig } from '../util/botConfig.js';
+import { logger } from '../util/logger.js';
+import {
+  sanitizeDiscordDescription,
+  sanitizeDiscordText,
+} from '../util/sanitizeText.js';
+
+// Infer types from Drizzle schema
+type NewsSetting = typeof newsSettings.$inferSelect;
 
 interface RSSCacheEntry {
   data: RSSFeedItem[];
@@ -22,6 +29,29 @@ interface RSSCacheEntry {
 
 const RSS_CACHE = new Map<string, RSSCacheEntry>();
 const CACHE_TTL = 15 * 60 * 1000;
+
+/**
+ * Clean up expired RSS cache entries to prevent memory leaks
+ * Should be called periodically (e.g., every 30 minutes)
+ */
+export function cleanupExpiredRssCache(): void {
+  const now = Date.now();
+  let cleanedCount = 0;
+
+  for (const [key, entry] of RSS_CACHE.entries()) {
+    if (now - entry.timestamp > CACHE_TTL) {
+      RSS_CACHE.delete(key);
+      cleanedCount++;
+    }
+  }
+
+  if (cleanedCount > 0) {
+    logger.debug('Cleaned up expired RSS cache entries', {
+      cleanedCount,
+      remainingEntries: RSS_CACHE.size,
+    });
+  }
+}
 
 const WOWHEAD_ICON = 'https://wow.zamimg.com/images/logos/favicon.png';
 
@@ -478,7 +508,7 @@ async function getEnabledSources(guildId: string): Promise<Set<string>> {
     return new Set(Object.keys(AVAILABLE_NEWS_SOURCES));
   }
 
-  return new Set(settings.map((s) => s.source));
+  return new Set(settings.map((s: NewsSetting) => s.source));
 }
 
 async function getNewsChannelForSource(
@@ -684,12 +714,14 @@ export async function checkGameNews(
           }
 
           const embed = new EmbedBuilder()
-            .setTitle(item.title)
+            .setTitle(sanitizeDiscordText(item.title))
             .setURL(item.url)
-            .setDescription(description || 'Click to read more')
+            .setDescription(
+              sanitizeDiscordDescription(description || 'Click to read more'),
+            )
             .setColor(source.color)
             .setFooter({
-              text: footerText,
+              text: sanitizeDiscordText(footerText, 100),
             })
             .setTimestamp(item.date * 1000);
 
@@ -760,12 +792,16 @@ export async function checkGameNews(
           if (!item.guid) continue;
 
           const embed = new EmbedBuilder()
-            .setTitle(item.title)
+            .setTitle(sanitizeDiscordText(item.title))
             .setURL(item.link)
-            .setDescription(item.contentSnippet || 'Click to read more')
+            .setDescription(
+              sanitizeDiscordDescription(
+                item.contentSnippet || 'Click to read more',
+              ),
+            )
             .setColor(source.color)
             .setFooter({
-              text: source.name,
+              text: sanitizeDiscordText(source.name, 100),
               iconURL: WOWHEAD_ICON,
             })
             .setTimestamp(item.pubDate ? new Date(item.pubDate) : new Date());

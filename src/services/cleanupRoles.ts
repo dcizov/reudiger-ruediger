@@ -1,13 +1,13 @@
 import type { Client } from 'discord.js';
 import { eq, lt } from 'drizzle-orm';
 
-import { db } from '../db';
+import { db } from '../db/index.js';
 import {
   reactionRoleButtons,
   reactionRoles,
   userRoleCooldowns,
-} from '../db/schema';
-import { logger } from '../utils/logger';
+} from '../db/schema.js';
+import { logger } from '../util/logger.js';
 
 interface RoleCleanupResult {
   orphanedMessages: number;

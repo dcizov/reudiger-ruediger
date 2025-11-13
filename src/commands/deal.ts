@@ -5,11 +5,11 @@ import {
   type ChatInputCommandInteraction,
 } from 'discord.js';
 
-import { postNewDeals } from '../services/postNewDeals';
-import type { Command } from '../types/command';
-import { logger } from '../utils/logger';
+import { postNewDeals } from '../services/postNewDeals.js';
+import type { Command } from './index.js';
+import { logger } from '../util/logger.js';
 
-export const deal: Command = {
+export default {
   data: new SlashCommandBuilder()
     .setName('deal')
     .setDescription('Admin: Manually trigger deal posting (bypasses schedule)')
@@ -37,4 +37,4 @@ export const deal: Command = {
       );
     }
   },
-};
+} satisfies Command;

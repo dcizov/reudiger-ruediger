@@ -17,3 +17,6 @@ export const ItadSearchResponseSchema = z.array(
 );
 
 export type ItadSearchResponse = z.infer<typeof ItadSearchResponseSchema>;
+
+// Extract search result item type for type safety
+export type ItadSearchResultItem = ItadSearchResponse[number];

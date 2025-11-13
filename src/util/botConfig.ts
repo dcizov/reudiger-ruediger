@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 
-import { db } from '../db/index';
-import { botConfig } from '../db/schema';
+import { db } from '../db/index.js';
+import { botConfig } from '../db/schema.js';
 
 export interface BotConfig {
   dealsChannelId: string;

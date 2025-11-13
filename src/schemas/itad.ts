@@ -77,3 +77,6 @@ export const ItadOverviewResponseSchema = z.object({
 export type ItadLookupResponse = z.infer<typeof ItadLookupResponseSchema>;
 export type ItadPricesResponse = z.infer<typeof ItadPricesResponseSchema>;
 export type ItadOverviewResponse = z.infer<typeof ItadOverviewResponseSchema>;
+
+// Extract deal type for type safety
+export type ItadDeal = ItadPricesResponse[number]['deals'][number];

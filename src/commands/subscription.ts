@@ -6,17 +6,17 @@ import {
 } from 'discord.js';
 import { and, eq } from 'drizzle-orm';
 
-import { env } from '../config';
-import { db } from '../db/index';
-import { subscriptions, userSettings } from '../db/schema';
-import type { SubcommandCommand } from '../types/command';
-import { getItadGameId, getItadGameOverview } from '../utils/itadPrice';
-import { searchItadGames } from '../utils/itadSearch';
-import { logger } from '../utils/logger';
+import { env } from '../config.js';
+import { db } from '../db/index.js';
+import { subscriptions, userSettings } from '../db/schema.js';
+import type { SubcommandCommand } from './index.js';
+import { handleCommandError } from '../util/commandError.js';
+import { getItadGameId, getItadGameOverview } from '../util/itadPrice.js';
+import { searchItadGames } from '../util/itadSearch.js';
 
 const MAX_SUBSCRIPTIONS_PER_USER = 20;
 
-export const subscription: SubcommandCommand = {
+export default {
   data: new SlashCommandBuilder()
     .setName('subscription')
     .setDescription('Manage your game price subscriptions')
@@ -108,26 +108,11 @@ export const subscription: SubcommandCommand = {
           });
       }
     } catch (error) {
-      logger.error('Subscription command error:', {
+      await handleCommandError(
+        interaction,
         error,
-        subcommand: interaction.options.getSubcommand(),
-        userId: interaction.user.id,
-      });
-
-      const errorMsg = '❌ An error occurred while processing your request.';
-
-      try {
-        if (interaction.deferred && !interaction.replied) {
-          await interaction.editReply(errorMsg);
-        } else if (!interaction.replied) {
-          await interaction.reply({
-            content: errorMsg,
-            flags: MessageFlags.Ephemeral,
-          });
-        }
-      } catch (replyError) {
-        logger.error('Could not send error message:', { error: replyError });
-      }
+        '❌ Failed to process subscription command. Please try again later.',
+      );
     }
   },
 
@@ -154,7 +139,7 @@ export const subscription: SubcommandCommand = {
 
     await interaction.respond([]);
   },
-};
+} satisfies SubcommandCommand;
 
 /**
  * Handle /subscription add - subscribes user to game price alerts

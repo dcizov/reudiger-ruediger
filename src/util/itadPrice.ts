@@ -2,13 +2,14 @@ import type { Client } from 'discord.js';
 import { z } from 'zod';
 
 import {
+  type ItadDeal,
   ItadLookupResponseSchema,
   ItadOverviewResponseSchema,
   ItadPricesResponseSchema,
-} from '../schemas/itad';
-import { cacheItadGameId, getCachedItadGameId } from './itadGameCache';
-import { logger } from './logger';
-import { fetchWithRetry } from './retryFetch';
+} from '../schemas/itad.js';
+import { cacheItadGameId, getCachedItadGameId } from './itadGameCache.js';
+import { logger } from './logger.js';
+import { fetchWithRetry } from './retryFetch.js';
 
 export interface ItadPrice {
   price_new: number;
@@ -196,7 +197,8 @@ export async function getItadEurPrices(
 
     for (const item of data) {
       const deal =
-        item.deals.find((d) => d.price.currency === 'EUR') ?? item.deals[0];
+        item.deals.find((d: ItadDeal) => d.price.currency === 'EUR') ??
+        item.deals[0];
       if (!deal) continue;
 
       prices[item.id] = {

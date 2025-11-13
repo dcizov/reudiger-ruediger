@@ -1,8 +1,8 @@
 import type { Client } from 'discord.js';
 import winston from 'winston';
 
-import { env } from '../config';
-import { DiscordTransport } from './discordTransport';
+import { env } from '../config.js';
+import { DiscordTransport } from './discordTransport.js';
 
 const { combine, timestamp, printf, colorize, errors } = winston.format;
 

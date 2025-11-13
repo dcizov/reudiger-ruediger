@@ -7,9 +7,9 @@ import {
   type TextChannel,
 } from 'discord.js';
 
-import { getBotConfig } from '../utils/botConfig';
-import { logger } from '../utils/logger';
-import { getPostedDeals, removePostedDeal } from '../utils/postedDeals';
+import { getBotConfig } from '../util/botConfig.js';
+import { logger } from '../util/logger.js';
+import { getPostedDeals, removePostedDeal } from '../util/postedDeals.js';
 
 function isSendableChannel(
   channel: Channel | null,

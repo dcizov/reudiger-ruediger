@@ -1,4 +1,4 @@
-import { logger } from './logger';
+import { logger } from './logger.js';
 
 /**
  * Fetches a URL with exponential backoff retry logic for rate limiting.

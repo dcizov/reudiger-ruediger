@@ -1,8 +1,8 @@
 import { ActivityType, Events, type Client } from 'discord.js';
 
-import { startDealScheduler } from '../services/schedulerService';
-import type { Event } from '../types/event';
-import { initializeDiscordLogger, logger } from '../utils/logger';
+import { startDealScheduler } from '../services/schedulerService.js';
+import type { Event } from './index.js';
+import { initializeDiscordLogger, logger } from '../util/logger.js';
 
 export default {
   name: Events.ClientReady,

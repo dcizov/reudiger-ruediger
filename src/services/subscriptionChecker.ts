@@ -1,10 +1,11 @@
 import { Client } from 'discord.js';
 import { eq, inArray } from 'drizzle-orm';
 
-import { env } from '../config';
-import { db } from '../db/index';
-import { subscriptions, userSettings } from '../db/schema';
-import { getItadGameOverview } from '../utils/itadPrice';
+import { env } from '../config.js';
+import { db } from '../db/index.js';
+import { subscriptions, userSettings } from '../db/schema.js';
+import { getItadGameOverview } from '../util/itadPrice.js';
+import { logger } from '../util/logger.js';
 
 export async function checkSubscriptionsAndNotify(
   client: Client,
@@ -37,10 +38,16 @@ export async function checkSubscriptionsAndNotify(
 
   const notifiedUserIds: number[] = [];
 
+  // Batch all game IDs into a single API call to avoid N+1 query pattern
+  const allGameIds = Array.from(groupedByGame.keys());
+  const gameOverviews = await getItadGameOverview(apiKey, allGameIds);
+
   for (const [gameId, subsForGame] of groupedByGame.entries()) {
-    const gameOverviews = await getItadGameOverview(apiKey, [gameId]);
     const gameData = gameOverviews[gameId];
-    if (!gameData) continue;
+    if (!gameData) {
+      logger.warn('No price data for subscribed game', { gameId });
+      continue;
+    }
 
     const currentPriceInCents = Math.round(gameData.currentPrice * 100);
 
@@ -83,17 +90,35 @@ export async function checkSubscriptionsAndNotify(
 🏪 Store: ${gameData.shop}
 ${gameData.isLowest ? '🔥 **NEW ALL-TIME LOW!**\n' : ''}🔗 ${gameData.url}`;
 
-      await user.send({ content: dmContent }).catch(() => null);
+      // Only update database if DM was successfully sent
+      try {
+        await user.send({ content: dmContent });
 
-      await db
-        .update(subscriptions)
-        .set({
-          currentPrice: currentPriceInCents,
-          notified: true,
-        })
-        .where(eq(subscriptions.id, sub.id));
+        // Mark as notified only if DM succeeded
+        await db
+          .update(subscriptions)
+          .set({
+            currentPrice: currentPriceInCents,
+            notified: true,
+          })
+          .where(eq(subscriptions.id, sub.id));
 
-      notifiedUserIds.push(sub.id);
+        notifiedUserIds.push(sub.id);
+        logger.info('Notified user about price drop', {
+          userId: sub.userId,
+          gameId: sub.gameId,
+          gameTitle: sub.title,
+          newPrice: currentPriceInCents,
+        });
+      } catch (error) {
+        // User has DMs disabled or bot is blocked
+        logger.debug('Could not send DM to user', {
+          userId: sub.userId,
+          gameId: sub.gameId,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+        // Don't mark as notified - retry next time
+      }
     }
   }
 

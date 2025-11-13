@@ -8,13 +8,14 @@ import {
   type TextChannel,
 } from 'discord.js';
 
-import { env } from '../config';
-import { getBotConfig } from '../utils/botConfig';
-import { getDeals } from '../utils/cheapshark';
-import { getItadGameId, getItadGameOverview } from '../utils/itadPrice';
-import { logger } from '../utils/logger';
-import { addPostedDeal, getPostedDealIDs } from '../utils/postedDeals';
-import { storeNames } from '../utils/stores';
+import { env } from '../config.js';
+import { getBotConfig } from '../util/botConfig.js';
+import { getDeals } from '../util/cheapshark.js';
+import { getItadGameId, getItadGameOverview } from '../util/itadPrice.js';
+import { logger } from '../util/logger.js';
+import { addPostedDeal, getPostedDealIDs } from '../util/postedDeals.js';
+import { sanitizeDiscordText } from '../util/sanitizeText.js';
+import { storeNames } from '../util/stores.js';
 
 const MIN_DISCOUNT_PERCENT = 70;
 const MIN_RATING_FOR_LOWER_DISCOUNT = 7.0;
@@ -184,7 +185,7 @@ export async function postNewDeals(
     const savings = `${parseFloat(deal.savings).toFixed(0)}%`;
 
     const embed = new EmbedBuilder()
-      .setTitle(`🎮 ${deal.title}`)
+      .setTitle(sanitizeDiscordText(`🎮 ${deal.title}`))
       .setURL(gameData.url)
       .setImage(imageUrl)
       .setColor(0x00ae86)
@@ -200,7 +201,11 @@ export async function postNewDeals(
           inline: true,
         },
         { name: '📉 Discount', value: `-${savings}`, inline: true },
-        { name: '🏪 Store', value: gameData.shop, inline: true },
+        {
+          name: '🏪 Store',
+          value: sanitizeDiscordText(gameData.shop, 100),
+          inline: true,
+        },
         {
           name: '⭐ Rating',
           value: deal.dealRating

@@ -5,12 +5,12 @@ import {
   type ChatInputCommandInteraction,
 } from 'discord.js';
 
-import { env } from '../config';
-import type { Command } from '../types/command';
-import { getItadGameId, getItadGameOverview } from '../utils/itadPrice';
-import { searchItadGames } from '../utils/itadSearch';
+import { env } from '../config.js';
+import type { Command } from './index.js';
+import { getItadGameId, getItadGameOverview } from '../util/itadPrice.js';
+import { searchItadGames } from '../util/itadSearch.js';
 
-export const compare: Command = {
+export default {
   data: new SlashCommandBuilder()
     .setName('compare')
     .setDescription(
@@ -114,11 +114,11 @@ export const compare: Command = {
     }
 
     const results = await searchItadGames(apiKey, focused);
-    const suggestions = results.map((title) => ({
+    const suggestions = results.map((title: string) => ({
       name: title,
       value: title,
     }));
 
     await interaction.respond(suggestions.slice(0, 25));
   },
-};
+} satisfies Command;

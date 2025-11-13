@@ -1,17 +1,17 @@
 import { URL } from 'node:url';
 import { Events, MessageFlags, type Interaction } from 'discord.js';
 
-import { startDealScheduler } from '../services/schedulerService';
-import type { Event } from '../types/event';
-import { loadCommands } from '../utils/loaders';
-import { logger } from '../utils/logger';
+import { startDealScheduler } from '../services/schedulerService.js';
+import type { Event } from './index.js';
+import { loadCommands } from '../util/loaders.js';
+import { logger } from '../util/logger.js';
 import {
   checkUserRoleCooldown,
   getAllRolesInGuild,
   getReactionRoleButton,
   updateUserRoleCooldown,
   type ReactionRoleButton,
-} from '../utils/reactionRoles';
+} from '../util/reactionRoles.js';
 
 const commands = await loadCommands(new URL('../commands/', import.meta.url));
 

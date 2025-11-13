@@ -2,11 +2,23 @@ import process from 'node:process';
 import { URL } from 'node:url';
 import { Client, GatewayIntentBits } from 'discord.js';
 
-import { env, isDev } from './config';
-import { stopDealScheduler } from './services/schedulerService';
-import { loadEvents } from './utils/loaders';
-import { logger } from './utils/logger';
-import { startWebhookServer } from './webhookServer';
+import { env, isDev } from './config.js';
+import { runMigrations } from './db/index.js';
+import { stopDealScheduler } from './services/schedulerService.js';
+import { loadEvents } from './util/loaders.js';
+import { logger } from './util/logger.js';
+import { startWebhookServer } from './webhookServer.js';
+
+// Run database migrations with proper error handling
+try {
+  await runMigrations();
+  logger.info('✅ Database migrations completed successfully');
+} catch (error) {
+  logger.error('❌ Failed to run database migrations. Bot cannot start.', {
+    error,
+  });
+  process.exit(1);
+}
 
 const client = new Client({
   intents: [
@@ -39,11 +51,7 @@ for (const event of events) {
   }
 }
 
-if (!env.DISCORD_TOKEN) {
-  logger.error('❌ DISCORD_TOKEN is missing from config.');
-  process.exit(1);
-}
-
+// DISCORD_TOKEN is already validated by Zod in config.ts, no need to check again
 await client.login(env.DISCORD_TOKEN);
 
 async function gracefulShutdown(signal: string): Promise<void> {
