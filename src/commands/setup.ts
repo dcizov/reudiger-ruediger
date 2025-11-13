@@ -73,6 +73,13 @@ export const setup: SubcommandCommand = {
         )
         .addChannelOption((option) =>
           option
+            .setName('wow_indev_news')
+            .setDescription('🔨 WoW In Development (PTR/Beta) news channel')
+            .addChannelTypes(ChannelType.GuildText)
+            .setRequired(false),
+        )
+        .addChannelOption((option) =>
+          option
             .setName('valheim_news')
             .setDescription('⚔️ Valheim-specific news channel')
             .addChannelTypes(ChannelType.GuildText)
@@ -274,6 +281,10 @@ async function handleChannels(interaction: ChatInputCommandInteraction) {
   );
   const cs2NewsChannel = interaction.options.getChannel('cs2_news', false);
   const wowNewsChannel = interaction.options.getChannel('wow_news', false);
+  const wowInDevNewsChannel = interaction.options.getChannel(
+    'wow_indev_news',
+    false,
+  );
   const valheimNewsChannel = interaction.options.getChannel(
     'valheim_news',
     false,
@@ -311,6 +322,15 @@ async function handleChannels(interaction: ChatInputCommandInteraction) {
       channelId: wowNewsChannel.id,
       name: 'WoW Retail',
       icon: '🏰',
+    });
+  }
+
+  if (wowInDevNewsChannel) {
+    sourceChannelMap.push({
+      source: 'wowInDev',
+      channelId: wowInDevNewsChannel.id,
+      name: 'WoW In Development',
+      icon: '🔨',
     });
   }
 
