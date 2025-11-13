@@ -4,7 +4,6 @@ import { ItadSearchResponseSchema } from '../schemas/itadSearch';
 import { logger } from './logger';
 import { fetchWithRetry } from './retryFetch';
 
-// Helper to redact API key from URLs in logs
 function redactApiKey(url: string): string {
   return url.replace(/key=[^&]+/, 'key=[REDACTED]');
 }
@@ -35,7 +34,6 @@ export async function searchItadGames(
       return [];
     }
 
-    // v1 API returns array directly, not wrapped in { results: [...] }
     return result.data.map((item) => item.title);
   } catch (error) {
     logger.error('Failed to search ITAD games:', { error });

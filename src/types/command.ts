@@ -5,6 +5,7 @@ import type {
   SlashCommandOptionsOnlyBuilder,
   SlashCommandSubcommandsOnlyBuilder,
 } from 'discord.js';
+import { z } from 'zod';
 
 /**
  * Standard command without subcommands
@@ -30,3 +31,23 @@ export interface SubcommandCommand {
 
   autocomplete?: (interaction: AutocompleteInteraction) => Promise<void>;
 }
+
+/**
+ * Runtime validation schema for commands
+ * Checks that a loaded module has required properties
+ */
+export const commandSchema = z.object({
+  data: z.unknown(),
+  execute: z.function(),
+  autocomplete: z.function().optional(),
+});
+
+/**
+ * Type predicate for command validation
+ * Used by the dynamic loader to filter valid commands
+ */
+export const isValidCommand = (
+  structure: unknown,
+): structure is Command | SubcommandCommand => {
+  return commandSchema.safeParse(structure).success;
+};

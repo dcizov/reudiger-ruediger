@@ -1,26 +1,12 @@
-import {
-  ActivityType,
-  Client,
-  Events,
-  GatewayIntentBits,
-  Interaction,
-  MessageFlags,
-} from 'discord.js';
+import path from 'node:path';
+import process from 'node:process';
+import { pathToFileURL } from 'node:url';
+import { Client, GatewayIntentBits } from 'discord.js';
 
-import { commands } from './commands';
 import { env, isDev } from './config';
-import {
-  startDealScheduler,
-  stopDealScheduler,
-} from './services/schedulerService';
-import { initializeDiscordLogger, logger } from './utils/logger';
-import {
-  checkUserRoleCooldown,
-  getAllRolesInGuild,
-  getReactionRoleButton,
-  updateUserRoleCooldown,
-  type ReactionRoleButton,
-} from './utils/reactionRoles';
+import { stopDealScheduler } from './services/schedulerService';
+import { loadEvents } from './utils/loaders';
+import { logger } from './utils/logger';
 import { startWebhookServer } from './webhookServer';
 
 const client = new Client({
@@ -32,319 +18,42 @@ const client = new Client({
   ],
 });
 
-function handleReady(readyClient: Client<true>): void {
-  logger.info(`✅ Discord bot is ready! Logged in as ${readyClient.user.tag}`);
+void (async () => {
+  try {
+    const eventsPath = path.join(__dirname, 'events');
+    const events = await loadEvents(pathToFileURL(eventsPath));
 
-  readyClient.user.setPresence({
-    activities: [
-      {
-        name: '/help for commands',
-        type: ActivityType.Playing,
-      },
-    ],
-    status: 'online',
-  });
+    logger.info(`📦 Registering ${events.length} event handlers...`);
 
-  logger.info('🎮 Bot status set: Playing /help for commands');
-
-  initializeDiscordLogger(client);
-  void startDealScheduler(client);
-}
-
-client.once(Events.ClientReady, handleReady);
-
-client.on(Events.InteractionCreate, (interaction: Interaction) => {
-  void (async () => {
-    if (interaction.isAutocomplete()) {
-      const command = commands[interaction.commandName];
-      if (command?.autocomplete) {
+    for (const event of events) {
+      const eventHandler = async (...args: unknown[]) => {
         try {
-          await command.autocomplete(interaction);
+          await event.execute(...(args as Parameters<typeof event.execute>));
         } catch (error) {
-          logger.error(
-            `Error during autocomplete: ${interaction.commandName}`,
-            { error },
-          );
-        }
-      }
-      return;
-    }
-
-    if (interaction.isButton()) {
-      try {
-        let buttonId = interaction.customId;
-        const isRolesCommand = interaction.customId.startsWith('role_button_');
-
-        if (isRolesCommand) {
-          buttonId = interaction.customId.replace('role_button_', '');
-        }
-
-        const buttonData = await getReactionRoleButton(buttonId);
-
-        if (!buttonData) {
-          await interaction.reply({
-            content: '❌ This role button is no longer valid.',
-            flags: MessageFlags.Ephemeral,
-          });
-          return;
-        }
-
-        if (!interaction.guild || !interaction.member) {
-          await interaction.reply({
-            content: '❌ This command can only be used in a server.',
-            flags: MessageFlags.Ephemeral,
-          });
-          return;
-        }
-
-        if (isRolesCommand) {
-          const cooldownCheck = await checkUserRoleCooldown(
-            interaction.user.id,
-            interaction.guild.id,
-          );
-          if (!cooldownCheck.canChange) {
-            await interaction.reply({
-              content: `⏱️ Please wait ${cooldownCheck.remainingTime} minute(s) before changing roles again.`,
-              flags: MessageFlags.Ephemeral,
-            });
-            return;
-          }
-
-          if (buttonData.required) {
-            await interaction.reply({
-              content: '🔒 This role is required and cannot be removed.',
-              flags: MessageFlags.Ephemeral,
-            });
-            return;
-          }
-        }
-
-        const member = interaction.guild.members.cache.get(interaction.user.id);
-        if (!member) {
-          await interaction.reply({
-            content: '❌ Could not find your member data.',
-            flags: MessageFlags.Ephemeral,
-          });
-          return;
-        }
-
-        const role = interaction.guild.roles.cache.get(buttonData.roleId);
-        if (!role) {
-          await interaction.reply({
-            content: '❌ This role no longer exists.',
-            flags: MessageFlags.Ephemeral,
-          });
-          return;
-        }
-
-        if (member.roles.cache.has(role.id)) {
-          await member.roles.remove(role);
-          await interaction.reply({
-            content: `✅ Removed the **${role.name}** role from you.`,
-            flags: MessageFlags.Ephemeral,
-          });
-        } else {
-          await member.roles.add(role);
-          await interaction.reply({
-            content: `✅ Gave you the **${role.name}** role!`,
-            flags: MessageFlags.Ephemeral,
+          logger.error(`Error executing event ${String(event.name)}:`, {
+            error,
           });
         }
+      };
 
-        if (isRolesCommand) {
-          await updateUserRoleCooldown(
-            interaction.user.id,
-            interaction.guild.id,
-          );
-        }
-      } catch (error) {
-        logger.error('Error handling button interaction:', { error });
-        await interaction
-          .reply({
-            content: '❌ An error occurred while toggling your role.',
-            flags: MessageFlags.Ephemeral,
-          })
-          .catch(() => null);
-      }
-      return;
-    }
-
-    if (interaction.isStringSelectMenu()) {
-      try {
-        if (interaction.customId.startsWith('role_select_')) {
-          if (!interaction.guild || !interaction.member) {
-            await interaction.reply({
-              content: '❌ This command can only be used in a server.',
-              flags: MessageFlags.Ephemeral,
-            });
-            return;
-          }
-
-          const cooldownCheck = await checkUserRoleCooldown(
-            interaction.user.id,
-            interaction.guild.id,
-          );
-          if (!cooldownCheck.canChange) {
-            await interaction.reply({
-              content: `⏱️ Please wait ${cooldownCheck.remainingTime} minute(s) before changing roles again.`,
-              flags: MessageFlags.Ephemeral,
-            });
-            return;
-          }
-
-          const member = interaction.guild.members.cache.get(
-            interaction.user.id,
-          );
-          if (!member) {
-            await interaction.reply({
-              content: '❌ Could not find your member data.',
-              flags: MessageFlags.Ephemeral,
-            });
-            return;
-          }
-
-          const selectedButtonIds = interaction.values;
-          const allRoles = await getAllRolesInGuild(interaction.guild.id);
-
-          const selectedRoleIds = new Set(
-            allRoles
-              .filter((r: ReactionRoleButton) =>
-                selectedButtonIds.includes(r.buttonId),
-              )
-              .map((r: ReactionRoleButton) => r.roleId),
-          );
-
-          const managedRoles = allRoles.filter(
-            (r: ReactionRoleButton) => !r.required,
-          );
-
-          const rolesToAdd: string[] = [];
-          const rolesToRemove: string[] = [];
-
-          for (const roleButton of managedRoles) {
-            const hasRole = member.roles.cache.has(roleButton.roleId);
-            const shouldHave = selectedRoleIds.has(roleButton.roleId);
-
-            if (shouldHave && !hasRole) {
-              rolesToAdd.push(roleButton.roleId);
-            } else if (!shouldHave && hasRole) {
-              rolesToRemove.push(roleButton.roleId);
-            }
-          }
-
-          if (rolesToAdd.length > 0) {
-            await member.roles.add(rolesToAdd);
-          }
-          if (rolesToRemove.length > 0) {
-            await member.roles.remove(rolesToRemove);
-          }
-
-          await updateUserRoleCooldown(
-            interaction.user.id,
-            interaction.guild.id,
-          );
-
-          const changes: string[] = [];
-          if (rolesToAdd.length > 0) {
-            const addedRoleNames = rolesToAdd
-              .map((id) => interaction.guild!.roles.cache.get(id)?.name)
-              .filter(Boolean)
-              .join(', ');
-            changes.push(`✅ Added: **${addedRoleNames}**`);
-          }
-          if (rolesToRemove.length > 0) {
-            const removedRoleNames = rolesToRemove
-              .map((id) => interaction.guild!.roles.cache.get(id)?.name)
-              .filter(Boolean)
-              .join(', ');
-            changes.push(`❌ Removed: **${removedRoleNames}**`);
-          }
-
-          if (changes.length === 0) {
-            await interaction.reply({
-              content:
-                '✅ No changes needed - your roles are already up to date.',
-              flags: MessageFlags.Ephemeral,
-            });
-          } else {
-            await interaction.reply({
-              content: changes.join('\n'),
-              flags: MessageFlags.Ephemeral,
-            });
-          }
-        }
-      } catch (error) {
-        logger.error('Error handling select menu interaction:', { error });
-        await interaction
-          .reply({
-            content: '❌ An error occurred while updating your roles.',
-            flags: MessageFlags.Ephemeral,
-          })
-          .catch(() => null);
-      }
-      return;
-    }
-
-    if (interaction.isChatInputCommand()) {
-      const command = commands[interaction.commandName];
-      if (!command) return;
-
-      if (interaction.deferred || interaction.replied) {
-        logger.debug('Interaction already processed', {
-          commandName: interaction.commandName,
-          interactionId: interaction.id,
-        });
-        return;
-      }
-
-      try {
-        await command.execute(interaction);
-
-        if (interaction.commandName === 'setup') {
-          void startDealScheduler(client);
-        }
-      } catch (error) {
-        logger.error(`❌ Error executing command ${interaction.commandName}:`, {
-          error,
-          commandName: interaction.commandName,
-        });
-
-        try {
-          if (interaction.deferred && !interaction.replied) {
-            await interaction.editReply({
-              content: 'There was an error executing this command!',
-            });
-          } else if (interaction.replied) {
-            await interaction.followUp({
-              content: 'There was an error executing this command!',
-              flags: MessageFlags.Ephemeral,
-            });
-          } else {
-            await interaction.reply({
-              content: 'There was an error executing this command!',
-              flags: MessageFlags.Ephemeral,
-            });
-          }
-        } catch (replyError) {
-          logger.debug('Could not send error message to user:', {
-            error: replyError,
-            commandName: interaction.commandName,
-          });
-        }
+      if (event.once) {
+        client.once(event.name, (...args) => void eventHandler(...args));
+      } else {
+        client.on(event.name, (...args) => void eventHandler(...args));
       }
     }
-  })();
-});
 
-if (!env.DISCORD_TOKEN) {
-  logger.error('❌ DISCORD_TOKEN is missing from config.');
-  process.exit(1);
-}
+    if (!env.DISCORD_TOKEN) {
+      logger.error('❌ DISCORD_TOKEN is missing from config.');
+      process.exit(1);
+    }
 
-client.login(env.DISCORD_TOKEN).catch((err: unknown) => {
-  logger.error('❌ Failed to log in to Discord:', { error: err });
-  process.exit(1);
-});
+    await client.login(env.DISCORD_TOKEN);
+  } catch (err) {
+    logger.error('❌ Failed to initialize bot:', { error: err });
+    process.exit(1);
+  }
+})();
 
 async function gracefulShutdown(signal: string): Promise<void> {
   logger.info(`\n${signal} received, shutting down gracefully...`);

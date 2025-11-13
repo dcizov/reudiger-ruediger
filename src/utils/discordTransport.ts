@@ -40,13 +40,11 @@ export class DiscordTransport extends Transport {
       this.emit('logged', info);
     });
 
-    // Skip if client not initialized
     if (!this.client) {
       callback();
       return;
     }
 
-    // Filter by log level (only send error and warn by default)
     const levelPriority: Record<string, number> = {
       error: 0,
       warn: 1,
@@ -77,15 +75,12 @@ export class DiscordTransport extends Transport {
         return;
       }
 
-      // Format message with emoji based on level
       const emoji =
         info.level === 'error' ? '🔴' : info.level === 'warn' ? '⚠️' : 'ℹ️';
       const formattedMessage = `${emoji} **[${info.level.toUpperCase()}]** ${info.message}`;
 
       await channel.send({ content: formattedMessage }).catch(() => null);
-    } catch {
-      // Silently fail - Discord logging is not critical
-    }
+    } catch {}
 
     callback();
   }

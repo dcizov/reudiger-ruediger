@@ -13,7 +13,6 @@ const { combine, timestamp, printf, colorize, errors } = winston.format;
 const consoleFormat = printf(({ level, message, timestamp, ...metadata }) => {
   let msg = `[${String(timestamp)}] ${String(level)}: ${String(message)}`;
 
-  // Add metadata if present (excluding internal Winston fields)
   const metaKeys = Object.keys(metadata).filter(
     (key) =>
       ![
@@ -41,7 +40,7 @@ const consoleFormat = printf(({ level, message, timestamp, ...metadata }) => {
  * Discord transport instance (client will be set later)
  */
 const discordTransport = new DiscordTransport({
-  minLevel: 'warn', // Only send warn and error to Discord
+  minLevel: 'warn',
 });
 
 /**
@@ -53,27 +52,14 @@ const discordTransport = new DiscordTransport({
 export const logger = winston.createLogger({
   level: env.LOG_LEVEL,
   format: combine(
-    errors({ stack: true }), // Include stack traces for errors
+    errors({ stack: true }),
     timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
   ),
   transports: [
-    // Console transport with colors
     new winston.transports.Console({
       format: combine(colorize(), consoleFormat),
     }),
-    // Discord transport (client set after bot ready)
     discordTransport,
-
-    // Optional: File transport for production (uncomment to enable)
-    // new winston.transports.File({
-    //   filename: 'logs/error.log',
-    //   level: 'error',
-    //   format: combine(timestamp(), json()),
-    // }),
-    // new winston.transports.File({
-    //   filename: 'logs/combined.log',
-    //   format: combine(timestamp(), json()),
-    // }),
   ],
 });
 

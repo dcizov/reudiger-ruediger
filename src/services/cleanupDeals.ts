@@ -50,7 +50,6 @@ export async function cleanupExpiredDeals(
       const msg = await channel.messages.fetch(deal.messageId);
       await msg.delete();
     } catch (error) {
-      // Message might already be deleted by user/admin - this is acceptable
       logger.debug(
         `Could not delete message ${deal.messageId} for deal "${deal.title}":`,
         { messageId: deal.messageId, dealTitle: deal.title, error },

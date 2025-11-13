@@ -14,52 +14,48 @@
  * @type {import('@commitlint/types').UserConfig}
  */
 const commitLintConfig = {
-  // Extending base conventional commit configuration for standard commit message formats
-  extends: ["@commitlint/config-conventional"],
+  extends: ['@commitlint/config-conventional'],
 
   rules: {
-    // Commit must always include a scope
-    "scope-empty": [2, "never"],
+    'scope-empty': [2, 'never'],
 
-    // Restrict allowed scopes
-    "scope-enum": [
+    'scope-enum': [
       2,
-      "always",
+      'always',
       [
-        "auth",
-        "api",
-        "ui",
-        "db",
-        "config",
-        "build",
-        "tests",
-        "infra",
-        "docs",
-        "deps",
+        'auth',
+        'api',
+        'ui',
+        'db',
+        'config',
+        'build',
+        'tests',
+        'infra',
+        'docs',
+        'deps',
       ],
     ],
 
-    // Restrict allowed commit types
-    "type-enum": [
+    'type-enum': [
       2,
-      "always",
+      'always',
       [
-        "feat",
-        "fix",
-        "docs",
-        "chore",
-        "style",
-        "refactor",
-        "ci",
-        "test",
-        "revert",
-        "perf",
+        'feat',
+        'fix',
+        'docs',
+        'chore',
+        'style',
+        'refactor',
+        'ci',
+        'test',
+        'revert',
+        'perf',
       ],
     ],
-    "subject-case": [2, "always", "lower-case"],
-    "subject-full-stop": [2, "never", "."],
-    "subject-empty": [2, "never"],
-    "body-max-line-length": [2, "always", 100],
+    'subject-case': [2, 'always', 'lower-case'],
+    'subject-full-stop': [2, 'never', '.'],
+    'subject-empty': [2, 'never'],
+    'body-max-line-length': [2, 'always', 100],
   },
 };
 

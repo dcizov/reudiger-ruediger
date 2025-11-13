@@ -29,7 +29,6 @@ export interface ItadGameOverview {
   currency: string;
 }
 
-// Helper to redact API key from URLs in logs
 function redactApiKey(url: string): string {
   return url.replace(/key=[^&]+/, 'key=[REDACTED]');
 }

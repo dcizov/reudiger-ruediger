@@ -5,8 +5,7 @@ interface CacheEntry {
 
 const itadGameIdCache = new Map<string, CacheEntry>();
 
-// Cache configuration
-const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+const CACHE_TTL = 24 * 60 * 60 * 1000;
 const MAX_CACHE_SIZE = 10000;
 
 export function getCachedItadGameId(title: string): string | undefined {
@@ -15,7 +14,6 @@ export function getCachedItadGameId(title: string): string | undefined {
 
   if (!entry) return undefined;
 
-  // Check TTL
   if (Date.now() - entry.timestamp > CACHE_TTL) {
     itadGameIdCache.delete(key);
     return undefined;
@@ -27,7 +25,6 @@ export function getCachedItadGameId(title: string): string | undefined {
 export function cacheItadGameId(title: string, gameId: string): void {
   const key = title.toLowerCase().trim();
 
-  // Cleanup if cache is too large (remove oldest entry)
   if (itadGameIdCache.size >= MAX_CACHE_SIZE) {
     const oldestKey = itadGameIdCache.keys().next().value;
     if (oldestKey) {

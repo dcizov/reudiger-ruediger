@@ -7,7 +7,6 @@ import {
   userRoleCooldowns,
 } from '../db/schema';
 
-// Add type inference from Drizzle schema
 type ReactionRoleButton = typeof reactionRoleButtons.$inferSelect;
 
 export async function addReactionRoleMessage(
@@ -62,7 +61,6 @@ export async function deleteReactionRoleMessage(
 export async function getAllRolesInGuild(
   guildId: string,
 ): Promise<ReactionRoleButton[]> {
-  // First, get all reaction role messages for this guild
   const messages = await db.query.reactionRoles.findMany({
     where: eq(reactionRoles.guildId, guildId),
   });
@@ -71,7 +69,6 @@ export async function getAllRolesInGuild(
     return [];
   }
 
-  // Get all buttons for these messages
   const messageIds = messages.map((m) => m.messageId);
   const buttons = await db.query.reactionRoleButtons.findMany({
     where: inArray(reactionRoleButtons.messageId, messageIds),
@@ -99,7 +96,6 @@ export async function checkUserRoleCooldown(
   });
 
   if (!record) {
-    // No cooldown record exists, user can change roles
     return { canChange: true };
   }
 
@@ -130,7 +126,6 @@ export async function updateUserRoleCooldown(
   });
 
   if (existing) {
-    // Update existing record
     await db
       .update(userRoleCooldowns)
       .set({ lastChanged: new Date() })
@@ -141,7 +136,6 @@ export async function updateUserRoleCooldown(
         ),
       );
   } else {
-    // Create new record
     await db.insert(userRoleCooldowns).values({
       userId,
       guildId,
@@ -170,5 +164,4 @@ export function groupRolesByCategory(
   return grouped;
 }
 
-// Export type for use in other files
 export type { ReactionRoleButton };

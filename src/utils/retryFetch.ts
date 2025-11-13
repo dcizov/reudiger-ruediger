@@ -20,24 +20,20 @@ export async function fetchWithRetry(
     try {
       const response = await fetch(url, options);
 
-      // Success - return immediately
       if (response.ok) {
         return response;
       }
 
-      // Don't retry on client errors (except 429)
       if (
         response.status >= 400 &&
         response.status < 500 &&
         response.status !== 429
       ) {
-        return response; // Let caller handle the error
+        return response;
       }
 
-      // Rate limited (429) or server error (5xx) - retry with backoff
       if (response.status === 429 || response.status >= 500) {
         if (attempt < maxRetries) {
-          // Exponential backoff: 1s, 2s, 4s
           const delayMs = 1000 * Math.pow(2, attempt);
           logger.warn(
             `HTTP ${response.status} on attempt ${attempt + 1}/${maxRetries + 1}. Retrying in ${delayMs}ms...`,
@@ -53,7 +49,6 @@ export async function fetchWithRetry(
         }
       }
 
-      // Max retries exceeded, return the failed response
       return response;
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
@@ -74,7 +69,6 @@ export async function fetchWithRetry(
     }
   }
 
-  // All retries exhausted
   throw (
     lastError ?? new Error(`Failed to fetch ${url} after ${maxRetries} retries`)
   );
