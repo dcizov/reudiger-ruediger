@@ -445,7 +445,7 @@ async function getNewsChannelForSource(
 }
 
 /**
- * Clean Steam HTML content while preserving paragraph structure
+ * Clean Steam BBCode/HTML content while preserving paragraph structure
  */
 function cleanSteamContent(html: string): string {
   if (!html) return '';
@@ -462,11 +462,43 @@ function cleanSteamContent(html: string): string {
     .replace(/&#039;/g, "'")
     .replace(/&apos;/g, "'");
 
+  text = text.replace(/\[\/p\]/gi, '\n\n');
+  text = text.replace(/\[p\]/gi, '');
+  text = text.replace(/\[\/h[1-6]\]/gi, '\n\n');
+  text = text.replace(/\[h[1-6]\]/gi, '');
+  text = text.replace(/\[\/list\]/gi, '\n');
+  text = text.replace(/\[list\]/gi, '\n');
+  text = text.replace(/\[\*\]/gi, '\n• ');
+  text = text.replace(/\[\/\*\]/gi, '');
+  text = text.replace(/\[\]\[\]/gi, '');
+  text = text.replace(/\[\]/gi, '');
+
+  text = text.replace(/\[b\]/gi, '');
+  text = text.replace(/\[\/b\]/gi, '');
+  text = text.replace(/\[i\]/gi, '');
+  text = text.replace(/\[\/i\]/gi, '');
+  text = text.replace(/\[u\]/gi, '');
+  text = text.replace(/\[\/u\]/gi, '');
+  text = text.replace(/\[strike\]/gi, '');
+  text = text.replace(/\[\/strike\]/gi, '');
+
+  text = text.replace(/\[url=[^\]]+\]([^\[]+)\[\/url\]/gi, '$1');
+  text = text.replace(/\[url\]([^\[]+)\[\/url\]/gi, '$1');
+
+  text = text.replace(/\[img\][^\[]+\[\/img\]/gi, '');
+
+  text = text.replace(/\[quote[^\]]*\]/gi, '');
+  text = text.replace(/\[\/quote\]/gi, '');
+
+  text = text.replace(/\[code\]/gi, '');
+  text = text.replace(/\[\/code\]/gi, '');
+
+  text = text.replace(/\[[^\]]+\]/g, '');
+
   text = text.replace(/<\/div>/gi, '\n\n');
   text = text.replace(/<\/p>/gi, '\n\n');
   text = text.replace(/<\/li>/gi, '\n');
   text = text.replace(/<\/h[1-6]>/gi, '\n\n');
-
   text = text.replace(/<br\s*\/?>/gi, '\n');
 
   text = text.replace(/<[^>]*>/g, '');
@@ -502,11 +534,25 @@ function extractSteamImage(html: string): string | null {
   const bgImageRegex = /background-image:\s*url\(\s*["']?([^"')]+)["']?\s*\)/gi;
   let match: RegExpExecArray | null;
 
+  const foundImages: string[] = [];
+
   while ((match = bgImageRegex.exec(decodedHtml)) !== null) {
     let url = match[1];
     if (!url) continue;
 
     url = url.trim();
+    foundImages.push(url);
+  }
+
+  const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi;
+  while ((match = imgRegex.exec(decodedHtml)) !== null) {
+    const url = match[1];
+    if (url) {
+      foundImages.push(url);
+    }
+  }
+
+  for (const url of foundImages) {
     const lowerUrl = url.toLowerCase();
 
     if (
@@ -520,37 +566,16 @@ function extractSteamImage(html: string): string | null {
       continue;
     }
 
-    if (
-      lowerUrl.includes('steamstatic.com') &&
-      (lowerUrl.includes('/ss_') ||
-        lowerUrl.includes('store_item_assets') ||
-        lowerUrl.includes('/apps/'))
-    ) {
+    if (lowerUrl.includes('store_item_assets')) {
       return url;
     }
 
-    if (lowerUrl.includes('akamaihd') || lowerUrl.includes('steamcdn')) {
+    if (lowerUrl.includes('/ss_')) {
       return url;
     }
-  }
-
-  const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi;
-  while ((match = imgRegex.exec(decodedHtml)) !== null) {
-    const url = match[1];
-    if (!url) continue;
-
-    const lowerUrl = url.toLowerCase();
 
     if (
-      lowerUrl.includes('emoticon') ||
-      lowerUrl.includes('avatar') ||
-      lowerUrl.includes('icon')
-    ) {
-      continue;
-    }
-
-    if (
-      lowerUrl.includes('steamstatic') ||
+      lowerUrl.includes('steamstatic.com') ||
       lowerUrl.includes('steamcdn') ||
       lowerUrl.includes('akamaihd')
     ) {
