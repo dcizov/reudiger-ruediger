@@ -4,10 +4,14 @@ export const SteamNewsItemSchema = z.object({
   gid: z.string(),
   title: z.string(),
   url: z.string(),
+  is_external_url: z.boolean(),
   author: z.string(),
   contents: z.string(),
-  date: z.number(),
   feedlabel: z.string(),
+  date: z.number(),
+  feedname: z.string(),
+  feed_type: z.number().optional(),
+  appid: z.number(),
 });
 
 export const SteamNewsResponseSchema = z.object({

@@ -458,20 +458,12 @@ function cleanSteamContent(html: string): string {
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
     .replace(/&#039;/g, "'");
-
-  // Convert breaks and paragraphs to newlines
   text = text.replace(/<br\s*\/?>/gi, '\n');
   text = text.replace(/<\/p>/gi, '\n\n');
   text = text.replace(/<p[^>]*>/gi, '');
-
-  // Remove all other HTML tags
   text = text.replace(/<[^>]*>/g, '');
-
-  // Clean up whitespace
   text = text.replace(/ {2,}/g, ' ');
   text = text.replace(/\n{3,}/g, '\n\n');
-
-  // Trim each line
   text = text
     .split('\n')
     .map((line) => line.trim())
@@ -482,14 +474,46 @@ function cleanSteamContent(html: string): string {
 }
 
 /**
- * Extract first meaningful image from Steam article HTML
+ * Extract first meaningful image from Steam article HTML (including background-image)
  */
 function extractSteamImage(html: string): string | null {
   if (!html) return null;
 
-  const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi;
+  const bgImageRegex =
+    /background-image:\s*url\(['"&quot;]?([^'"&quot;)]+)['"&quot;]?\)/gi;
   let match: RegExpExecArray | null;
 
+  while ((match = bgImageRegex.exec(html)) !== null) {
+    let url = match[1];
+    if (!url) continue;
+
+    url = url
+      .replace(/&quot;/g, '"')
+      .replace(/&amp;/g, '&')
+      .trim()
+      .replace(/^["']|["']$/g, '');
+
+    const lowerUrl = url.toLowerCase();
+
+    if (
+      lowerUrl.includes('emoticon') ||
+      lowerUrl.includes('avatar') ||
+      lowerUrl.includes('icon') ||
+      lowerUrl.includes('16x16') ||
+      lowerUrl.includes('32x32')
+    ) {
+      continue;
+    }
+
+    if (
+      lowerUrl.includes('steamstatic.com') &&
+      (lowerUrl.includes('/ss_') || lowerUrl.includes('store_item_assets'))
+    ) {
+      return url;
+    }
+  }
+
+  const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi;
   while ((match = imgRegex.exec(html)) !== null) {
     const url = match[1];
     if (!url) continue;
@@ -599,12 +623,25 @@ export async function checkGameNews(
             contentImage ??
             `https://cdn.cloudflare.steamstatic.com/steam/apps/${source.appId}/header.jpg`;
 
-          // Clean HTML content while preserving paragraphs
           const cleanContent = cleanSteamContent(item.contents);
           const description =
             cleanContent.length > 400
               ? cleanContent.slice(0, 397) + '...'
               : cleanContent;
+
+          const postDate = new Date(item.date * 1000);
+          const formattedDate = postDate.toLocaleDateString('en-US', {
+            weekday: 'short',
+            day: 'numeric',
+            month: 'long',
+            year: 'numeric',
+          });
+          const formattedTime = postDate.toLocaleTimeString('en-US', {
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true,
+            timeZoneName: 'short',
+          });
 
           const embed = new EmbedBuilder()
             .setTitle(item.title)
@@ -617,6 +654,27 @@ export async function checkGameNews(
                 : source.name,
             })
             .setTimestamp(item.date * 1000);
+
+          if (item.feedlabel || formattedDate) {
+            embed.addFields(
+              ...([
+                item.feedlabel && {
+                  name: '📋 Type',
+                  value: item.feedlabel,
+                  inline: true,
+                },
+                {
+                  name: '📅 Posted',
+                  value: `${formattedDate}\n@ ${formattedTime}`,
+                  inline: true,
+                },
+              ].filter(Boolean) as {
+                name: string;
+                value: string;
+                inline: boolean;
+              }[]),
+            );
+          }
 
           if (imageUrl) {
             embed.setImage(imageUrl);
@@ -638,6 +696,7 @@ export async function checkGameNews(
               channelId,
               itemId: item.gid,
               hasContentImage: !!contentImage,
+              feedLabel: item.feedlabel,
             });
           } catch (sendError) {
             logger.error(`Failed to post ${source.name} news to channel:`, {
