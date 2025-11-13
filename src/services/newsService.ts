@@ -153,6 +153,53 @@ function extractImageFromDescription(description: string): string | undefined {
   return undefined;
 }
 
+/**
+ * Fetch the header image from a Steam Community article page
+ */
+async function fetchSteamArticleImage(
+  articleUrl: string,
+): Promise<string | undefined> {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+    const response = await fetch(articleUrl, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; DiscordBot/1.0)',
+      },
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) return undefined;
+
+    const html = await response.text();
+
+    const bgImageRegex = /background-image:\s*url\(&quot;([^&]+)&quot;\)/i;
+    const match = bgImageRegex.exec(html);
+
+    if (match?.[1]) {
+      return match[1];
+    }
+
+    const ogImageMatch = /<meta property="og:image" content="([^"]+)"/.exec(
+      html,
+    );
+    if (ogImageMatch?.[1]) {
+      return ogImageMatch[1];
+    }
+
+    return undefined;
+  } catch (error) {
+    logger.debug('Failed to fetch Steam article image', {
+      url: articleUrl,
+      error,
+    });
+    return undefined;
+  }
+}
+
 async function fetchWowheadArticleImage(
   articleUrl: string,
 ): Promise<string | undefined> {
@@ -517,75 +564,6 @@ function cleanSteamContent(html: string): string {
   return text.trim();
 }
 
-/**
- * Extract first meaningful image from Steam article HTML (including background-image)
- */
-function extractSteamImage(html: string): string | null {
-  if (!html) return null;
-
-  const decodedHtml = html
-    .replace(/&quot;/g, '"')
-    .replace(/&#039;/g, "'")
-    .replace(/&#39;/g, "'")
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>');
-
-  const bgImageRegex = /background-image:\s*url\(\s*["']?([^"')]+)["']?\s*\)/gi;
-  let match: RegExpExecArray | null;
-
-  const foundImages: string[] = [];
-
-  while ((match = bgImageRegex.exec(decodedHtml)) !== null) {
-    let url = match[1];
-    if (!url) continue;
-
-    url = url.trim();
-    foundImages.push(url);
-  }
-
-  const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi;
-  while ((match = imgRegex.exec(decodedHtml)) !== null) {
-    const url = match[1];
-    if (url) {
-      foundImages.push(url);
-    }
-  }
-
-  for (const url of foundImages) {
-    const lowerUrl = url.toLowerCase();
-
-    if (
-      lowerUrl.includes('emoticon') ||
-      lowerUrl.includes('avatar') ||
-      lowerUrl.includes('icon') ||
-      lowerUrl.includes('16x16') ||
-      lowerUrl.includes('32x32') ||
-      lowerUrl.includes('64x64')
-    ) {
-      continue;
-    }
-
-    if (lowerUrl.includes('store_item_assets')) {
-      return url;
-    }
-
-    if (lowerUrl.includes('/ss_')) {
-      return url;
-    }
-
-    if (
-      lowerUrl.includes('steamstatic.com') ||
-      lowerUrl.includes('steamcdn') ||
-      lowerUrl.includes('akamaihd')
-    ) {
-      return url;
-    }
-  }
-
-  return null;
-}
-
 export async function checkGameNews(
   client: Client,
   guildId?: string,
@@ -662,7 +640,7 @@ export async function checkGameNews(
           .slice(0, 3);
 
         for (const item of itemsToPost) {
-          const contentImage = extractSteamImage(item.contents);
+          const contentImage = await fetchSteamArticleImage(item.url);
           const imageUrl =
             contentImage ??
             `https://cdn.cloudflare.steamstatic.com/steam/apps/${source.appId}/header.jpg`;
