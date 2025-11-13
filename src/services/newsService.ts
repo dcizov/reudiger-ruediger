@@ -444,6 +444,80 @@ async function getNewsChannelForSource(
   return config.newsChannelId ?? null;
 }
 
+/**
+ * Clean Steam HTML content while preserving paragraph structure
+ */
+function cleanSteamContent(html: string): string {
+  if (!html) return '';
+
+  let text = html
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#039;/g, "'");
+
+  // Convert breaks and paragraphs to newlines
+  text = text.replace(/<br\s*\/?>/gi, '\n');
+  text = text.replace(/<\/p>/gi, '\n\n');
+  text = text.replace(/<p[^>]*>/gi, '');
+
+  // Remove all other HTML tags
+  text = text.replace(/<[^>]*>/g, '');
+
+  // Clean up whitespace
+  text = text.replace(/ {2,}/g, ' ');
+  text = text.replace(/\n{3,}/g, '\n\n');
+
+  // Trim each line
+  text = text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .join('\n');
+
+  return text.trim();
+}
+
+/**
+ * Extract first meaningful image from Steam article HTML
+ */
+function extractSteamImage(html: string): string | null {
+  if (!html) return null;
+
+  const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi;
+  let match: RegExpExecArray | null;
+
+  while ((match = imgRegex.exec(html)) !== null) {
+    const url = match[1];
+    if (!url) continue;
+
+    const lowerUrl = url.toLowerCase();
+
+    if (
+      lowerUrl.includes('emoticon') ||
+      lowerUrl.includes('avatar') ||
+      lowerUrl.includes('icon') ||
+      lowerUrl.includes('16x16') ||
+      lowerUrl.includes('32x32')
+    ) {
+      continue;
+    }
+
+    if (
+      lowerUrl.includes('steamcdn') ||
+      lowerUrl.includes('steamstatic') ||
+      lowerUrl.includes('akamai')
+    ) {
+      return url;
+    }
+  }
+
+  return null;
+}
+
 export async function checkGameNews(
   client: Client,
   guildId?: string,
@@ -520,23 +594,33 @@ export async function checkGameNews(
           .slice(0, 3);
 
         for (const item of itemsToPost) {
-          const imageUrl = `https://cdn.cloudflare.steamstatic.com/steam/apps/${source.appId}/capsule_616x353.jpg`;
+          const contentImage = extractSteamImage(item.contents);
+          const imageUrl =
+            contentImage ??
+            `https://cdn.cloudflare.steamstatic.com/steam/apps/${source.appId}/header.jpg`;
+
+          // Clean HTML content while preserving paragraphs
+          const cleanContent = cleanSteamContent(item.contents);
+          const description =
+            cleanContent.length > 400
+              ? cleanContent.slice(0, 397) + '...'
+              : cleanContent;
 
           const embed = new EmbedBuilder()
             .setTitle(item.title)
             .setURL(item.url)
-            .setDescription(
-              item.contents
-                .replace(/\\/g, '')
-                .replace(/\n/g, ' ')
-                .replace(/\s+/g, ' ')
-                .trim()
-                .slice(0, 400) + (item.contents.length > 400 ? '...' : ''),
-            )
+            .setDescription(description || 'Click to read more')
             .setColor(source.color)
-            .setImage(imageUrl)
-            .setFooter({ text: source.name })
+            .setFooter({
+              text: item.author
+                ? `${source.name} • ${item.author}`
+                : source.name,
+            })
             .setTimestamp(item.date * 1000);
+
+          if (imageUrl) {
+            embed.setImage(imageUrl);
+          }
 
           try {
             const message = await (channel as TextChannel).send({
@@ -553,6 +637,7 @@ export async function checkGameNews(
             logger.debug(`Posted ${source.name} news to channel`, {
               channelId,
               itemId: item.gid,
+              hasContentImage: !!contentImage,
             });
           } catch (sendError) {
             logger.error(`Failed to post ${source.name} news to channel:`, {
