@@ -154,11 +154,11 @@ function extractImageFromDescription(description: string): string | undefined {
 }
 
 /**
- * Fetch the header image from a Steam Community article page
+ * Fetch the header image and type from a Steam Community article page
  */
-async function fetchSteamArticleImage(
+async function fetchSteamArticleData(
   articleUrl: string,
-): Promise<string | undefined> {
+): Promise<{ image?: string; type?: string }> {
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
@@ -172,31 +172,46 @@ async function fetchSteamArticleImage(
 
     clearTimeout(timeoutId);
 
-    if (!response.ok) return undefined;
+    if (!response.ok) return {};
 
     const html = await response.text();
 
+    let image: string | undefined;
+    let type: string | undefined;
+
     const bgImageRegex = /background-image:\s*url\(&quot;([^&]+)&quot;\)/i;
-    const match = bgImageRegex.exec(html);
+    const imageMatch = bgImageRegex.exec(html);
 
-    if (match?.[1]) {
-      return match[1];
+    if (imageMatch?.[1]) {
+      image = imageMatch[1];
     }
 
-    const ogImageMatch = /<meta property="og:image" content="([^"]+)"/.exec(
-      html,
-    );
-    if (ogImageMatch?.[1]) {
-      return ogImageMatch[1];
+    if (!image) {
+      const ogImageMatch = /<meta property="og:image" content="([^"]+)"/.exec(
+        html,
+      );
+      if (ogImageMatch?.[1]) {
+        image = ogImageMatch[1];
+      }
     }
 
-    return undefined;
+    const typeRegex = /<div[^>]*>Type<\/div>\s*<div[^>]*>([^<]+)<\/div>/i;
+    const typeMatch = typeRegex.exec(html);
+
+    if (typeMatch?.[1]) {
+      type = typeMatch[1].trim();
+    }
+
+    const result: { image?: string; type?: string } = {};
+    if (image) result.image = image;
+    if (type) result.type = type;
+    return result;
   } catch (error) {
-    logger.debug('Failed to fetch Steam article image', {
+    logger.debug('Failed to fetch Steam article data', {
       url: articleUrl,
       error,
     });
-    return undefined;
+    return {};
   }
 }
 
@@ -640,10 +655,18 @@ export async function checkGameNews(
           .slice(0, 3);
 
         for (const item of itemsToPost) {
-          const contentImage = await fetchSteamArticleImage(item.url);
-          const imageUrl =
-            contentImage ??
-            `https://cdn.cloudflare.steamstatic.com/steam/apps/${source.appId}/header.jpg`;
+          let imageUrl: string | undefined;
+          let updateType: string | undefined;
+
+          const isSteamCommunity = item.url.includes('steamcommunity.com');
+
+          if (isSteamCommunity) {
+            const articleData = await fetchSteamArticleData(item.url);
+            imageUrl = articleData.image;
+            updateType = articleData.type;
+          }
+
+          imageUrl ??= `https://cdn.cloudflare.steamstatic.com/steam/apps/${source.appId}/header.jpg`;
 
           const cleanContent = cleanSteamContent(item.contents);
           const description =
@@ -651,13 +674,22 @@ export async function checkGameNews(
               ? cleanContent.slice(0, 397) + '...'
               : cleanContent;
 
+          let footerText: string;
+          if (updateType) {
+            footerText = updateType;
+          } else if (item.feedlabel) {
+            footerText = item.feedlabel;
+          } else {
+            footerText = isSteamCommunity ? 'Steam News' : 'External Article';
+          }
+
           const embed = new EmbedBuilder()
             .setTitle(item.title)
             .setURL(item.url)
             .setDescription(description || 'Click to read more')
             .setColor(source.color)
             .setFooter({
-              text: item.feedlabel || 'Steam News',
+              text: footerText,
             })
             .setTimestamp(item.date * 1000);
 
@@ -680,8 +712,9 @@ export async function checkGameNews(
             logger.debug(`Posted ${source.name} news to channel`, {
               channelId,
               itemId: item.gid,
-              hasContentImage: !!contentImage,
-              imageUrl: contentImage ?? 'fallback',
+              isSteamCommunity,
+              hasImage: !!imageUrl,
+              updateType,
               feedLabel: item.feedlabel,
             });
           } catch (sendError) {
