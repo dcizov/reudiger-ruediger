@@ -313,6 +313,7 @@ async function fetchRSSNews(feedUrl: string): Promise<RSSFeedItem[]> {
           .replace(/&apos;/g, "'")
           .replace(/»/g, '')
           .replace(/«/g, '')
+          .replace(/Continue reading/gi, '')
           .replace(/\s+/g, ' ')
           .trim();
 
@@ -601,7 +602,7 @@ export async function checkGameNews(
             .setDescription(item.contentSnippet || 'Click to read more')
             .setColor(source.color)
             .setFooter({
-              text: `${source.name} • Published`,
+              text: source.name,
               iconURL: WOWHEAD_ICON,
             })
             .setTimestamp(item.pubDate ? new Date(item.pubDate) : new Date());
