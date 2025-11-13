@@ -201,7 +201,7 @@ async function fetchSteamNews(
   count = 5,
 ): Promise<SteamNewsItem[]> {
   const response = await fetch(
-    `https://api.steampowered.com/ISteamNews/GetNewsForApp/v2/?appid=${appId}&count=${count}&maxlength=500&format=json`,
+    `https://api.steampowered.com/ISteamNews/GetNewsForApp/v2/?appid=${appId}&count=${count}&format=json`,
   );
 
   if (!response.ok) {
@@ -450,20 +450,32 @@ async function getNewsChannelForSource(
 function cleanSteamContent(html: string): string {
   if (!html) return '';
 
-  let text = html
+  let text = html;
+
+  text = text
     .replace(/&nbsp;/g, ' ')
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
-    .replace(/&#039;/g, "'");
-  text = text.replace(/<br\s*\/?>/gi, '\n');
+    .replace(/&#039;/g, "'")
+    .replace(/&apos;/g, "'");
+
+  text = text.replace(/<\/div>/gi, '\n\n');
   text = text.replace(/<\/p>/gi, '\n\n');
-  text = text.replace(/<p[^>]*>/gi, '');
+  text = text.replace(/<\/li>/gi, '\n');
+  text = text.replace(/<\/h[1-6]>/gi, '\n\n');
+
+  text = text.replace(/<br\s*\/?>/gi, '\n');
+
   text = text.replace(/<[^>]*>/g, '');
+
+  text = text.replace(/\\/g, '');
+
   text = text.replace(/ {2,}/g, ' ');
   text = text.replace(/\n{3,}/g, '\n\n');
+
   text = text
     .split('\n')
     .map((line) => line.trim())
@@ -479,20 +491,22 @@ function cleanSteamContent(html: string): string {
 function extractSteamImage(html: string): string | null {
   if (!html) return null;
 
-  const bgImageRegex =
-    /background-image:\s*url\(['"&quot;]?([^'"&quot;)]+)['"&quot;]?\)/gi;
+  const decodedHtml = html
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, "'")
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>');
+
+  const bgImageRegex = /background-image:\s*url\(\s*["']?([^"')]+)["']?\s*\)/gi;
   let match: RegExpExecArray | null;
 
-  while ((match = bgImageRegex.exec(html)) !== null) {
+  while ((match = bgImageRegex.exec(decodedHtml)) !== null) {
     let url = match[1];
     if (!url) continue;
 
-    url = url
-      .replace(/&quot;/g, '"')
-      .replace(/&amp;/g, '&')
-      .trim()
-      .replace(/^["']|["']$/g, '');
-
+    url = url.trim();
     const lowerUrl = url.toLowerCase();
 
     if (
@@ -500,21 +514,28 @@ function extractSteamImage(html: string): string | null {
       lowerUrl.includes('avatar') ||
       lowerUrl.includes('icon') ||
       lowerUrl.includes('16x16') ||
-      lowerUrl.includes('32x32')
+      lowerUrl.includes('32x32') ||
+      lowerUrl.includes('64x64')
     ) {
       continue;
     }
 
     if (
       lowerUrl.includes('steamstatic.com') &&
-      (lowerUrl.includes('/ss_') || lowerUrl.includes('store_item_assets'))
+      (lowerUrl.includes('/ss_') ||
+        lowerUrl.includes('store_item_assets') ||
+        lowerUrl.includes('/apps/'))
     ) {
+      return url;
+    }
+
+    if (lowerUrl.includes('akamaihd') || lowerUrl.includes('steamcdn')) {
       return url;
     }
   }
 
   const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi;
-  while ((match = imgRegex.exec(html)) !== null) {
+  while ((match = imgRegex.exec(decodedHtml)) !== null) {
     const url = match[1];
     if (!url) continue;
 
@@ -523,17 +544,15 @@ function extractSteamImage(html: string): string | null {
     if (
       lowerUrl.includes('emoticon') ||
       lowerUrl.includes('avatar') ||
-      lowerUrl.includes('icon') ||
-      lowerUrl.includes('16x16') ||
-      lowerUrl.includes('32x32')
+      lowerUrl.includes('icon')
     ) {
       continue;
     }
 
     if (
-      lowerUrl.includes('steamcdn') ||
       lowerUrl.includes('steamstatic') ||
-      lowerUrl.includes('akamai')
+      lowerUrl.includes('steamcdn') ||
+      lowerUrl.includes('akamaihd')
     ) {
       return url;
     }
@@ -629,52 +648,15 @@ export async function checkGameNews(
               ? cleanContent.slice(0, 397) + '...'
               : cleanContent;
 
-          const postDate = new Date(item.date * 1000);
-          const formattedDate = postDate.toLocaleDateString('en-US', {
-            weekday: 'short',
-            day: 'numeric',
-            month: 'long',
-            year: 'numeric',
-          });
-          const formattedTime = postDate.toLocaleTimeString('en-US', {
-            hour: 'numeric',
-            minute: '2-digit',
-            hour12: true,
-            timeZoneName: 'short',
-          });
-
           const embed = new EmbedBuilder()
             .setTitle(item.title)
             .setURL(item.url)
             .setDescription(description || 'Click to read more')
             .setColor(source.color)
             .setFooter({
-              text: item.author
-                ? `${source.name} • ${item.author}`
-                : source.name,
+              text: item.feedlabel || 'Steam News',
             })
             .setTimestamp(item.date * 1000);
-
-          if (item.feedlabel || formattedDate) {
-            embed.addFields(
-              ...([
-                item.feedlabel && {
-                  name: '📋 Type',
-                  value: item.feedlabel,
-                  inline: true,
-                },
-                {
-                  name: '📅 Posted',
-                  value: `${formattedDate}\n@ ${formattedTime}`,
-                  inline: true,
-                },
-              ].filter(Boolean) as {
-                name: string;
-                value: string;
-                inline: boolean;
-              }[]),
-            );
-          }
 
           if (imageUrl) {
             embed.setImage(imageUrl);
@@ -696,6 +678,7 @@ export async function checkGameNews(
               channelId,
               itemId: item.gid,
               hasContentImage: !!contentImage,
+              imageUrl: contentImage ?? 'fallback',
               feedLabel: item.feedlabel,
             });
           } catch (sendError) {
