@@ -3,4 +3,16 @@ dist
 .cache
 .git
 .env
+.env.local
+.env.production
 *.log
+npm-debug.log
+.vscode
+.idea
+.DS_Store
+.husky
+coverage
+.github
+README.md
+*.md
+.eslintcache

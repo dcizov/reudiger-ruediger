@@ -3,40 +3,42 @@ services:
     container_name: reudiger-ruediger-prod
     build:
       target: production
-    environment:
-      NODE_ENV: production
-    develop: null
-    volumes: []
-    command: ['node', 'dist/index.js']
-    restart: always
-    dns:
-      - 8.8.8.8
-      - 1.1.1.1
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-    networks:
-      - reudiger-network
-
-  migrate:
-    container_name: reudiger-ruediger-migrate
-    build:
-      context: .
-      target: migrate
     env_file:
-      - .env
+      - .env.production
     environment:
       NODE_ENV: production
-    command: ['npm', 'run', 'db:migrate']
+    command: ['npm', 'start']
+    restart: unless-stopped
     depends_on:
-      - postgres-db
-    restart: 'no'
+      postgres-db:
+        condition: service_healthy
     networks:
       - reudiger-network
 
   postgres-db:
-    container_name: '${DATABASE_NAME}-postgres-prod'
+    container_name: reudiger-ruediger-postgres-prod
+    image: postgres:16-alpine
+    environment:
+      # Use individual vars from .env.production
+      POSTGRES_USER: ${DATABASE_USER:-postgres}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
+      POSTGRES_DB: ${DATABASE_NAME:-reudiger-ruediger}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${DATABASE_USER:-postgres}']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
     ports: []
-    restart: always
     networks:
       - reudiger-network
+
+volumes:
+  pgdata:
+    name: reudiger-ruediger-pgdata-prod
+
+networks:
+  reudiger-network:
+    driver: bridge

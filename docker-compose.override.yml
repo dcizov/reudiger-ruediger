@@ -8,13 +8,9 @@ services:
       - /app/node_modules
     environment:
       NODE_ENV: development
+      DATABASE_URL: postgresql://${DATABASE_USER:-postgres}:${DATABASE_PASSWORD:-password}@postgres-db:${DATABASE_PORT:-5432}/${DATABASE_NAME:-reudiger-ruediger}
     command: ['npm', 'run', 'dev']
-    networks:
-      - reudiger-network
 
   postgres-db:
-    container_name: '${DATABASE_NAME:-sample-bot}-postgres'
     ports:
-      - '127.0.0.1:${DATABASE_PORT:-5432}:5432'
-    networks:
-      - reudiger-network
+      - '127.0.0.1:5432:5432'
