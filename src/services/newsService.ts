@@ -2,13 +2,18 @@ import { extract } from '@extractus/feed-extractor';
 import type { Client, TextChannel } from 'discord.js';
 import { EmbedBuilder } from 'discord.js';
 import { and, eq, lt } from 'drizzle-orm';
+import { z } from 'zod';
 
+import { env } from '../config.js';
 import { db } from '../db/index.js';
 import { newsSettings, postedNews } from '../db/schema.js';
 import {
   FeedEntrySchema,
   FeedResponseSchema,
+  SteamCommunityDataSchema,
   SteamNewsResponseSchema,
+  SteamPartnerEventDataSchema,
+  SteamPartnerEventSchema,
   type RSSFeedItem,
   type SteamNewsItem,
 } from '../schemas/news.js';
@@ -30,26 +35,114 @@ interface RSSCacheEntry {
 const RSS_CACHE = new Map<string, RSSCacheEntry>();
 const CACHE_TTL = 15 * 60 * 1000;
 
-/**
- * Clean up expired RSS cache entries to prevent memory leaks
- * Should be called periodically (e.g., every 30 minutes)
- */
-export function cleanupExpiredRssCache(): void {
-  const now = Date.now();
-  let cleanedCount = 0;
+// Steam News API response cache
+interface SteamNewsCacheEntry {
+  data: SteamNewsItem[];
+  timestamp: number;
+}
 
+const STEAM_NEWS_CACHE = new Map<number, SteamNewsCacheEntry>();
+
+// Steam article image URL cache (longer TTL since images rarely change)
+interface ImageCacheEntry {
+  imageUrl: string | null;
+  timestamp: number;
+}
+
+const STEAM_IMAGE_CACHE = new Map<string, ImageCacheEntry>();
+const IMAGE_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+
+// Cache performance metrics
+let steamNewsCacheHits = 0;
+let steamNewsCacheMisses = 0;
+let steamImageCacheHits = 0;
+let steamImageCacheMisses = 0;
+
+/**
+ * Clean up expired cache entries for RSS feeds, Steam news, and images
+ * Should be called periodically (e.g., every 30 minutes) to prevent memory leaks
+ */
+export function cleanupExpiredNewsCache(): void {
+  const now = Date.now();
+  let rssCleanedCount = 0;
+  let steamNewsCleanedCount = 0;
+  let imageCleanedCount = 0;
+
+  // Clean RSS cache
   for (const [key, entry] of RSS_CACHE.entries()) {
     if (now - entry.timestamp > CACHE_TTL) {
       RSS_CACHE.delete(key);
-      cleanedCount++;
+      rssCleanedCount++;
     }
   }
 
-  if (cleanedCount > 0) {
-    logger.debug('Cleaned up expired RSS cache entries', {
-      cleanedCount,
-      remainingEntries: RSS_CACHE.size,
+  // Clean Steam news cache
+  for (const [key, entry] of STEAM_NEWS_CACHE.entries()) {
+    if (now - entry.timestamp > CACHE_TTL) {
+      STEAM_NEWS_CACHE.delete(key);
+      steamNewsCleanedCount++;
+    }
+  }
+
+  // Clean image cache
+  for (const [key, entry] of STEAM_IMAGE_CACHE.entries()) {
+    if (now - entry.timestamp > IMAGE_CACHE_TTL) {
+      STEAM_IMAGE_CACHE.delete(key);
+      imageCleanedCount++;
+    }
+  }
+
+  const totalCleaned =
+    rssCleanedCount + steamNewsCleanedCount + imageCleanedCount;
+
+  // Calculate cache performance metrics
+  const steamNewsTotalRequests = steamNewsCacheHits + steamNewsCacheMisses;
+  const steamImageTotalRequests = steamImageCacheHits + steamImageCacheMisses;
+  const steamNewsHitRate =
+    steamNewsTotalRequests > 0
+      ? ((steamNewsCacheHits / steamNewsTotalRequests) * 100).toFixed(1)
+      : '0.0';
+  const steamImageHitRate =
+    steamImageTotalRequests > 0
+      ? ((steamImageCacheHits / steamImageTotalRequests) * 100).toFixed(1)
+      : '0.0';
+
+  if (
+    totalCleaned > 0 ||
+    steamNewsTotalRequests > 0 ||
+    steamImageTotalRequests > 0
+  ) {
+    logger.debug('News cache status', {
+      cleaned: {
+        rss: rssCleanedCount,
+        steamNews: steamNewsCleanedCount,
+        images: imageCleanedCount,
+        total: totalCleaned,
+      },
+      remaining: {
+        rss: RSS_CACHE.size,
+        steamNews: STEAM_NEWS_CACHE.size,
+        images: STEAM_IMAGE_CACHE.size,
+      },
+      performance: {
+        steamNews: {
+          hits: steamNewsCacheHits,
+          misses: steamNewsCacheMisses,
+          hitRate: `${steamNewsHitRate}%`,
+        },
+        steamImages: {
+          hits: steamImageCacheHits,
+          misses: steamImageCacheMisses,
+          hitRate: `${steamImageHitRate}%`,
+        },
+      },
     });
+
+    // Reset metrics after logging
+    steamNewsCacheHits = 0;
+    steamNewsCacheMisses = 0;
+    steamImageCacheHits = 0;
+    steamImageCacheMisses = 0;
   }
 }
 
@@ -184,14 +277,32 @@ function extractImageFromDescription(description: string): string | undefined {
 }
 
 /**
- * Fetch the header image and type from a Steam Community article page
+ * Extract article-specific image from Steam Community article page
+ * Steam embeds article data in JSON within data-partnereventstore attribute
+ *
+ * @param articleUrl - Full Steam Community article URL
+ * @param gid - Article GID from Steam API (used to match correct event in JSON)
+ * @returns Promise resolving to image URL or null
  */
 async function fetchSteamArticleData(
   articleUrl: string,
-): Promise<{ image?: string; type?: string }> {
+  gid: string,
+): Promise<string | null> {
+  // Check cache first
+  const cached = STEAM_IMAGE_CACHE.get(gid);
+  if (cached && Date.now() - cached.timestamp < IMAGE_CACHE_TTL) {
+    steamImageCacheHits++;
+    logger.debug('Using cached Steam article image', { gid });
+    return cached.imageUrl;
+  }
+  steamImageCacheMisses++;
+
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    const timeoutId = setTimeout(
+      () => controller.abort(),
+      env.STEAM_IMAGE_FETCH_TIMEOUT,
+    );
 
     const response = await fetch(articleUrl, {
       signal: controller.signal,
@@ -202,46 +313,139 @@ async function fetchSteamArticleData(
 
     clearTimeout(timeoutId);
 
-    if (!response.ok) return {};
+    if (!response.ok) {
+      STEAM_IMAGE_CACHE.set(gid, { imageUrl: null, timestamp: Date.now() });
+      return null;
+    }
 
     const html = await response.text();
 
-    let image: string | undefined;
-    let type: string | undefined;
+    let imageUrl: string | null = null;
 
-    const bgImageRegex = /background-image:\s*url\(&quot;([^&]+)&quot;\)/i;
-    const imageMatch = bgImageRegex.exec(html);
+    // Extract JSON data from data-partnereventstore attribute
+    const partnerDataMatch = /<div[^>]*data-partnereventstore="([^"]+)"/.exec(
+      html,
+    );
 
-    if (imageMatch?.[1]) {
-      image = imageMatch[1];
+    if (partnerDataMatch?.[1]) {
+      try {
+        // Unescape HTML entities in JSON
+        const jsonStr = partnerDataMatch[1]
+          .replace(/&quot;/g, '"')
+          .replace(/&amp;/g, '&')
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&#039;/g, "'")
+          .replace(/&apos;/g, "'");
+
+        const eventsRaw: unknown = JSON.parse(jsonStr);
+
+        // Validate events array with Zod
+        if (Array.isArray(eventsRaw)) {
+          const eventsResult = z
+            .array(SteamPartnerEventSchema)
+            .safeParse(eventsRaw);
+
+          if (eventsResult.success) {
+            const events = eventsResult.data;
+            const event = events.find((e) => e.gid === gid);
+
+            if (event?.jsondata) {
+              // Parse nested jsondata if it's a string
+              const eventDataRaw: unknown =
+                typeof event.jsondata === 'string'
+                  ? JSON.parse(event.jsondata)
+                  : event.jsondata;
+
+              // Validate event data with Zod
+              const eventDataResult =
+                SteamPartnerEventDataSchema.safeParse(eventDataRaw);
+
+              if (eventDataResult.success) {
+                const eventData = eventDataResult.data;
+                const imageHash = eventData.localized_title_image?.[0];
+
+                if (imageHash) {
+                  // Extract clan account ID from data-community attribute
+                  const communityDataMatch = /data-community="([^"]+)"/.exec(
+                    html,
+                  );
+
+                  if (communityDataMatch?.[1]) {
+                    try {
+                      const communityStr = communityDataMatch[1]
+                        .replace(/&quot;/g, '"')
+                        .replace(/&amp;/g, '&');
+
+                      const communityDataRaw: unknown =
+                        JSON.parse(communityStr);
+
+                      // Validate community data with Zod
+                      const communityDataResult =
+                        SteamCommunityDataSchema.safeParse(communityDataRaw);
+
+                      if (communityDataResult.success) {
+                        const clanAccountID =
+                          communityDataResult.data.CLANACCOUNTID;
+                        imageUrl = `https://clan.fastly.steamstatic.com/images/${clanAccountID}/${imageHash}`;
+                        logger.debug(
+                          'Extracted Steam article image from JSON',
+                          {
+                            gid,
+                            clanAccountID,
+                            imageHash,
+                            imageUrl,
+                          },
+                        );
+                      }
+                    } catch (communityParseError) {
+                      logger.debug('Failed to parse data-community JSON', {
+                        gid,
+                        error: communityParseError,
+                      });
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      } catch (jsonParseError) {
+        logger.debug('Failed to parse data-partnereventstore JSON', {
+          gid,
+          url: articleUrl,
+          error: jsonParseError,
+        });
+      }
     }
 
-    if (!image) {
+    // Fallback to og:image if JSON parsing failed
+    if (!imageUrl) {
       const ogImageMatch = /<meta property="og:image" content="([^"]+)"/.exec(
         html,
       );
       if (ogImageMatch?.[1]) {
-        image = ogImageMatch[1];
+        imageUrl = ogImageMatch[1];
+        logger.debug('Using og:image fallback for Steam article', {
+          gid,
+          imageUrl,
+        });
       }
     }
 
-    const typeRegex = /<div[^>]*>Type<\/div>\s*<div[^>]*>([^<]+)<\/div>/i;
-    const typeMatch = typeRegex.exec(html);
-
-    if (typeMatch?.[1]) {
-      type = typeMatch[1].trim();
-    }
-
-    const result: { image?: string; type?: string } = {};
-    if (image) result.image = image;
-    if (type) result.type = type;
-    return result;
+    // Cache the result (even if null) to avoid repeated failed attempts
+    STEAM_IMAGE_CACHE.set(gid, { imageUrl, timestamp: Date.now() });
+    return imageUrl;
   } catch (error) {
-    logger.debug('Failed to fetch Steam article data', {
+    logger.debug('Failed to fetch Steam article image', {
       url: articleUrl,
-      error,
+      gid,
+      error: error instanceof Error ? error.message : 'Unknown error',
     });
-    return {};
+
+    // Cache null result to prevent retry spam
+    STEAM_IMAGE_CACHE.set(gid, { imageUrl: null, timestamp: Date.now() });
+    return null;
   }
 }
 
@@ -250,7 +454,10 @@ async function fetchWowheadArticleImage(
 ): Promise<string | undefined> {
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    const timeoutId = setTimeout(
+      () => controller.abort(),
+      env.WOWHEAD_IMAGE_FETCH_TIMEOUT,
+    );
 
     const response = await fetch(articleUrl, {
       signal: controller.signal,
@@ -288,12 +495,19 @@ async function fetchWowheadArticleImage(
   }
 }
 
+/**
+ * Fetch Steam news from API (without cache)
+ * Uses feed filtering for higher quality content
+ */
 async function fetchSteamNews(
   appId: number,
   count = 5,
 ): Promise<SteamNewsItem[]> {
+  // Filter for official announcements and blog posts only (higher quality)
+  const feeds = 'steam_community_announcements,steam_community_blog';
+
   const response = await fetch(
-    `https://api.steampowered.com/ISteamNews/GetNewsForApp/v2/?appid=${appId}&count=${count}&format=json`,
+    `https://api.steampowered.com/ISteamNews/GetNewsForApp/v2/?appid=${appId}&count=${count}&feeds=${feeds}&format=json`,
   );
 
   if (!response.ok) {
@@ -303,6 +517,35 @@ async function fetchSteamNews(
   const rawData: unknown = await response.json();
   const data = SteamNewsResponseSchema.parse(rawData);
   return data.appnews.newsitems;
+}
+
+/**
+ * Fetch Steam news with 15-minute cache
+ */
+async function fetchSteamNewsWithCache(
+  appId: number,
+  count = 5,
+): Promise<SteamNewsItem[]> {
+  const cached = STEAM_NEWS_CACHE.get(appId);
+  const now = Date.now();
+
+  if (cached && now - cached.timestamp < CACHE_TTL) {
+    steamNewsCacheHits++;
+    logger.debug('Using cached Steam news', { appId });
+    return cached.data;
+  }
+  steamNewsCacheMisses++;
+
+  const items = await fetchSteamNews(appId, count);
+  STEAM_NEWS_CACHE.set(appId, { data: items, timestamp: now });
+
+  logger.debug('Fetched and cached Steam news', {
+    appId,
+    count: items.length,
+    cacheUntil: new Date(now + CACHE_TTL).toISOString(),
+  });
+
+  return items;
 }
 
 async function fetchRSSNewsWithRetry(
@@ -670,7 +913,9 @@ export async function checkGameNews(
       }
 
       if (source.type === 'steam') {
-        const items = await fetchSteamNews(source.appId);
+        // Use cached Steam news API response
+        const items = await fetchSteamNewsWithCache(source.appId);
+
         const newItems = await Promise.all(
           items.map(async (item) => ({
             item,
@@ -684,18 +929,34 @@ export async function checkGameNews(
           .reverse()
           .slice(0, 3);
 
-        for (const item of itemsToPost) {
-          let imageUrl: string | undefined;
-          let updateType: string | undefined;
+        // Fetch images in parallel for all items to post
+        const imageResults = await Promise.allSettled(
+          itemsToPost.map((item) => {
+            const isSteamCommunity = item.url.includes('steamcommunity.com');
+            if (isSteamCommunity) {
+              return fetchSteamArticleData(item.url, item.gid);
+            }
+            return Promise.resolve(null);
+          }),
+        );
+
+        // Post each article with its fetched image
+        for (let i = 0; i < itemsToPost.length; i++) {
+          const item = itemsToPost[i];
+          if (!item) continue; // Skip if item is undefined
+
+          const imageResult = imageResults[i];
+          if (!imageResult) continue; // Skip if result is undefined
 
           const isSteamCommunity = item.url.includes('steamcommunity.com');
 
-          if (isSteamCommunity) {
-            const articleData = await fetchSteamArticleData(item.url);
-            imageUrl = articleData.image;
-            updateType = articleData.type;
+          // Get image from parallel fetch result
+          let imageUrl: string | null = null;
+          if (isSteamCommunity && imageResult.status === 'fulfilled') {
+            imageUrl = imageResult.value;
           }
 
+          // Fallback to game header image if no article-specific image found
           imageUrl ??= `https://cdn.cloudflare.steamstatic.com/steam/apps/${source.appId}/header.jpg`;
 
           const cleanContent = cleanSteamContent(item.contents);
@@ -704,9 +965,10 @@ export async function checkGameNews(
               ? cleanContent.slice(0, 397) + '...'
               : cleanContent;
 
+          // Use tags if available, otherwise feedlabel
           let footerText: string;
-          if (updateType) {
-            footerText = updateType;
+          if (item.tags && item.tags.length > 0 && item.tags[0]) {
+            footerText = item.tags[0]; // Use primary tag
           } else if (item.feedlabel) {
             footerText = item.feedlabel;
           } else {
@@ -746,7 +1008,8 @@ export async function checkGameNews(
               itemId: item.gid,
               isSteamCommunity,
               hasImage: !!imageUrl,
-              updateType,
+              imageFetchSuccess: imageResult.status === 'fulfilled',
+              tags: item.tags,
               feedLabel: item.feedlabel,
             });
           } catch (sendError) {

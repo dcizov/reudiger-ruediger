@@ -3,22 +3,10 @@ import { URL } from 'node:url';
 import { Client, GatewayIntentBits } from 'discord.js';
 
 import { env, isDev } from './config.js';
-import { runMigrations } from './db/index.js';
 import { stopDealScheduler } from './services/schedulerService.js';
 import { loadEvents } from './util/loaders.js';
 import { logger } from './util/logger.js';
 import { startWebhookServer } from './webhookServer.js';
-
-// Run database migrations with proper error handling
-try {
-  await runMigrations();
-  logger.info('✅ Database migrations completed successfully');
-} catch (error) {
-  logger.error('❌ Failed to run database migrations. Bot cannot start.', {
-    error,
-  });
-  process.exit(1);
-}
 
 const client = new Client({
   intents: [

@@ -1,11 +1,32 @@
 services:
+  migrate:
+    build:
+      context: .
+    env_file:
+      - .env
+    environment:
+      # Override DATABASE_URL for Docker (use postgres-db hostname)
+      DATABASE_URL: postgresql://${DATABASE_USER:-postgres}:${DATABASE_PASSWORD}@postgres-db:5432/${DATABASE_NAME}
+    command: npm run migrate
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+    networks:
+      - reudiger-network
+    restart: "no"
+
   discord-bot:
     build:
       context: .
     env_file:
       - .env
+    environment:
+      # Override DATABASE_URL for Docker (use postgres-db hostname)
+      DATABASE_URL: postgresql://${DATABASE_USER:-postgres}:${DATABASE_PASSWORD}@postgres-db:5432/${DATABASE_NAME}
     restart: unless-stopped
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       postgres-db:
         condition: service_healthy
     networks:

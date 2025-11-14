@@ -6,7 +6,7 @@ import { logger } from '../util/logger.js';
 import { cleanupExpiredDeals } from './cleanupDeals.js';
 import {
   checkGameNews,
-  cleanupExpiredRssCache,
+  cleanupExpiredNewsCache,
   cleanupOldPostedNews,
 } from './newsService.js';
 import { postNewDeals } from './postNewDeals.js';
@@ -69,8 +69,8 @@ export async function startDealScheduler(client: Client): Promise<void> {
       if (cleaned > 0)
         logger.info(`🗑️ Cleaned up ${cleaned} old news entries.`, { cleaned });
 
-      // Clean up expired RSS cache entries to prevent memory leaks
-      cleanupExpiredRssCache();
+      // Clean up expired cache entries (RSS, Steam news, images) to prevent memory leaks
+      cleanupExpiredNewsCache();
     })();
   });
 

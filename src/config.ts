@@ -24,6 +24,22 @@ const envSchema = z.object({
     .transform((val) => val === 'true')
     .optional()
     .default(false),
+  STEAM_IMAGE_FETCH_TIMEOUT: z
+    .string()
+    .regex(
+      /^\d+$/,
+      'STEAM_IMAGE_FETCH_TIMEOUT must be a number in milliseconds',
+    )
+    .optional()
+    .transform((val) => (val ? Number(val) : 2000)),
+  WOWHEAD_IMAGE_FETCH_TIMEOUT: z
+    .string()
+    .regex(
+      /^\d+$/,
+      'WOWHEAD_IMAGE_FETCH_TIMEOUT must be a number in milliseconds',
+    )
+    .optional()
+    .transform((val) => (val ? Number(val) : 5000)),
 });
 
 export type Env = z.infer<typeof envSchema>;

@@ -5,6 +5,7 @@ import { glob } from 'glob';
 
 import type { Command, SubcommandCommand } from '../commands/index.js';
 import { isValidCommand } from '../commands/index.js';
+import { isProd } from '../config.js';
 import type { Event } from '../events/index.js';
 import { isValidEvent } from '../events/index.js';
 
@@ -38,7 +39,7 @@ export async function loadStructures<Structure>(
 
   const structures: Structure[] = [];
 
-  const extension = process.env.NODE_ENV === 'production' ? 'js' : 'ts';
+  const extension = isProd ? 'js' : 'ts';
   const pattern = resolve(
     basePath,
     recursive ? `**/*.${extension}` : `*.${extension}`,

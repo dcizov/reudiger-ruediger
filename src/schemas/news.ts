@@ -12,6 +12,7 @@ export const SteamNewsItemSchema = z.object({
   feedname: z.string(),
   feed_type: z.number().optional(),
   appid: z.number(),
+  tags: z.array(z.string()).optional(),
 });
 
 export const SteamNewsResponseSchema = z.object({
@@ -64,8 +65,31 @@ export const RSSFeedItemSchema = z.object({
   image: z.string().optional(),
 });
 
+/**
+ * Zod schema for Steam's embedded JSON data in article pages
+ * Used to validate data-partnereventstore attribute content
+ */
+export const SteamPartnerEventDataSchema = z.object({
+  localized_title_image: z.array(z.string()).optional(),
+  localized_capsule_image: z.array(z.string()).optional(),
+  event_type: z.number().optional(),
+});
+
+export const SteamPartnerEventSchema = z.object({
+  gid: z.string(),
+  jsondata: z.string().or(SteamPartnerEventDataSchema).optional(),
+});
+
+export const SteamCommunityDataSchema = z.object({
+  CLANACCOUNTID: z.number(),
+  APPID: z.number().optional(),
+});
+
 export type SteamNewsItem = z.infer<typeof SteamNewsItemSchema>;
 export type SteamNewsResponse = z.infer<typeof SteamNewsResponseSchema>;
 export type FeedEntry = z.infer<typeof FeedEntrySchema>;
 export type FeedResponse = z.infer<typeof FeedResponseSchema>;
 export type RSSFeedItem = z.infer<typeof RSSFeedItemSchema>;
+export type SteamPartnerEventData = z.infer<typeof SteamPartnerEventDataSchema>;
+export type SteamPartnerEvent = z.infer<typeof SteamPartnerEventSchema>;
+export type SteamCommunityData = z.infer<typeof SteamCommunityDataSchema>;
