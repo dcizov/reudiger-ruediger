@@ -17,6 +17,9 @@ services:
         condition: service_healthy
     networks:
       - reudiger-network
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
 
   migrate:
     build:
