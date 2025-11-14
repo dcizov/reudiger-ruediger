@@ -54,6 +54,7 @@ export const subscriptions = pgTable(
     currentPrice: integer('current_price'),
     targetPrice: integer('target_price'),
     notified: boolean('notified').default(false),
+    steamAppId: integer('steam_app_id'), // Steam app ID for Steam-based price tracking
     createdAt: timestamp('created_at').defaultNow(),
   },
   (table) => [
@@ -146,5 +147,89 @@ export const postedNews = pgTable(
     index('posted_news_guild_id_idx').on(table.guildId),
     index('posted_news_source_idx').on(table.source),
     index('posted_news_posted_at_idx').on(table.postedAt),
+  ],
+);
+
+// ============================================================================
+// Steam Web API Integration Tables
+// ============================================================================
+
+/**
+ * Steam App Cache - Caches Steam game metadata to reduce API calls
+ * Stores detailed game information from Steam Store API
+ * TTL: Games should be re-fetched when lastUpdated > 24 hours old
+ */
+export const steamAppCache = pgTable(
+  'steam_app_cache',
+  {
+    id: serial('id').primaryKey(),
+    appId: integer('app_id').notNull().unique(),
+    name: text('name').notNull(),
+    type: text('type'), // 'game', 'dlc', 'demo', etc.
+    headerImage: text('header_image'),
+    shortDescription: text('short_description'),
+    developers: text('developers'), // JSON array stored as string
+    publishers: text('publishers'), // JSON array stored as string
+    releaseDate: text('release_date'),
+    isFree: boolean('is_free'),
+    metacriticScore: integer('metacritic_score'), // 0-100
+    lastUpdated: timestamp('last_updated').notNull().defaultNow(),
+  },
+  (table) => [
+    index('steam_app_cache_name_idx').on(table.name),
+    index('steam_app_cache_last_updated_idx').on(table.lastUpdated),
+  ],
+);
+
+/**
+ * Steam Profiles - Links Discord users to their Steam accounts
+ * Enables /steam profile, /library, and other Steam-based features
+ * One Discord user can link one Steam account
+ */
+export const steamProfiles = pgTable(
+  'steam_profiles',
+  {
+    id: serial('id').primaryKey(),
+    discordUserId: varchar('discord_user_id', { length: 64 })
+      .notNull()
+      .unique(),
+    steamId: varchar('steam_id', { length: 64 }).notNull().unique(),
+    personaName: text('persona_name'),
+    profileUrl: text('profile_url'),
+    avatar: text('avatar'),
+    isPublic: boolean('is_public').default(false),
+    lastSynced: timestamp('last_synced').notNull().defaultNow(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => [
+    index('steam_profiles_discord_user_idx').on(table.discordUserId),
+    index('steam_profiles_steam_id_idx').on(table.steamId),
+  ],
+);
+
+/**
+ * Steam Wishlists - User wishlists with price alert functionality
+ * Users can add Steam games and get notified when prices drop
+ * Max 20 items per user (enforced in application logic)
+ */
+export const steamWishlists = pgTable(
+  'steam_wishlists',
+  {
+    id: serial('id').primaryKey(),
+    userId: varchar('user_id', { length: 64 }).notNull(),
+    steamAppId: integer('steam_app_id').notNull(),
+    gameName: text('game_name').notNull(),
+    addedPrice: integer('added_price'), // Price in cents when added
+    targetPrice: integer('target_price'), // Alert when price drops below (cents)
+    notified: boolean('notified').default(false).notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => [
+    index('steam_wishlists_user_id_idx').on(table.userId),
+    index('steam_wishlists_steam_app_id_idx').on(table.steamAppId),
+    uniqueIndex('steam_wishlists_user_app_unique').on(
+      table.userId,
+      table.steamAppId,
+    ),
   ],
 );

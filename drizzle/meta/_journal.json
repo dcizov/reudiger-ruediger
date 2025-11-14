@@ -50,6 +50,13 @@
       "when": 1762958457000,
       "tag": "0006_sharp_sharon_carter",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1763114805344,
+      "tag": "0007_glossy_norman_osborn",
+      "breakpoints": true
     }
   ]
 }

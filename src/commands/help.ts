@@ -41,6 +41,23 @@ export default {
         ].join('\n'),
       },
       {
+        name: '🎮 Steam Integration',
+        value: [
+          '`/steam link <profile>` — Link your Steam account',
+          '`/steam profile` — View your Steam profile and library stats',
+          '`/steam game <title>` — Look up game details and pricing',
+        ].join('\n'),
+      },
+      {
+        name: '⭐ Steam Wishlist',
+        value: [
+          '`/wishlist add <game> [target_price]` — Add game to wishlist with optional price alert',
+          '`/wishlist view` — View your Steam wishlist',
+          '`/wishlist remove <game>` — Remove game from wishlist',
+          '`/wishlist clear` — Clear your entire wishlist',
+        ].join('\n'),
+      },
+      {
         name: '📊 Deal Quality Filters',
         value: [
           '• Posts only deals **≥70% off** OR',
@@ -95,7 +112,7 @@ export default {
     });
 
     embed.setFooter({
-      text: 'Game Deals Bot • Powered by IsThereAnyDeal.com & CheapShark',
+      text: 'Game Deals Bot • Powered by IsThereAnyDeal.com, CheapShark & Steam',
       iconURL: 'https://isthereanydeal.com/assets/favicon.png',
     });
 

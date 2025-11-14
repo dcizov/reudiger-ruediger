@@ -9,6 +9,7 @@ export default defineConfig(
       'dist/**',
       '*.config.mjs',
       '*.config.js',
+      '*.config.ts',
       'commitlint.config.mjs',
     ],
   },

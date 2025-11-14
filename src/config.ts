@@ -8,6 +8,12 @@ const envSchema = z.object({
   DISCORD_CLIENT_ID: z.string().min(1, 'Discord client ID is required'),
   DISCORD_GUILD_ID: z.string().min(1, 'Discord guild ID is required'),
   ITAD_API_KEY: z.string().min(1, 'ITAD API key is required'),
+  STEAM_API_KEY: z.string().optional(),
+  STEAM_RATE_LIMIT_PER_MINUTE: z
+    .string()
+    .regex(/^\d+$/)
+    .optional()
+    .transform((val) => (val ? Number(val) : 100)),
   DATABASE_URL: z.url('DATABASE_URL must be a valid URL'),
   NODE_ENV: z
     .enum(['development', 'production', 'test'])
