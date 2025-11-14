@@ -261,7 +261,8 @@ async function steamApiRequest<T>(
 // ============================================================================
 
 /**
- * Get complete list of all Steam apps
+ * Get complete list of all Steam apps with pagination
+ * Uses IStoreService/GetAppList/v1 endpoint (requires API key)
  * Cached for 24 hours to minimize API calls
  *
  * @returns Array of Steam apps or empty array on error
@@ -275,25 +276,87 @@ export async function getSteamAppList(): Promise<SteamApp[]> {
     return cached;
   }
 
-  logger.info('Fetching Steam app list from API...');
-
-  const response = await steamApiRequest(
-    '/ISteamApps/GetAppList/v2',
-    {},
-    SteamAppListResponseSchema,
-  );
-
-  if (!response) {
-    logger.warn('Failed to fetch Steam app list');
+  if (!env.STEAM_API_KEY) {
+    logger.warn('Steam API key not configured, cannot fetch app list');
     return [];
   }
 
-  const apps = response.applist.apps;
-  steamAppListCache.set(cacheKey, apps);
+  logger.info('Fetching Steam app list from API (this may take a moment)...');
 
-  logger.info(`Fetched and cached ${apps.length} Steam apps`);
+  const allApps: SteamApp[] = [];
+  let lastAppId = 0;
+  let hasMore = true;
 
-  return apps;
+  try {
+    while (hasMore) {
+      // Acquire rate limit token
+      await rateLimiter.acquire();
+
+      // Construct URL for IStoreService/GetAppList/v1
+      const url = new URL(
+        'https://api.steampowered.com/IStoreService/GetAppList/v1/',
+      );
+      url.searchParams.append('key', env.STEAM_API_KEY);
+      url.searchParams.append('include_games', 'true');
+      url.searchParams.append('max_results', '50000');
+
+      if (lastAppId > 0) {
+        url.searchParams.append('last_appid', String(lastAppId));
+      }
+
+      const response = await fetchWithRetry(url.toString());
+
+      if (!response.ok) {
+        logger.warn(`Steam GetAppList failed: ${response.status}`, {
+          status: response.status,
+          statusText: response.statusText,
+        });
+        break;
+      }
+
+      const rawData: unknown = await response.json();
+      const result = SteamAppListResponseSchema.safeParse(rawData);
+
+      if (!result.success) {
+        logger.error('Steam app list validation failed', {
+          error: z.treeifyError(result.error),
+        });
+        break;
+      }
+
+      // Map to simpler SteamApp structure (appid + name only)
+      const apps = result.data.response.apps.map((app) => ({
+        appid: app.appid,
+        name: app.name,
+      }));
+
+      allApps.push(...apps);
+
+      hasMore = result.data.response.have_more_results ?? false;
+      lastAppId = result.data.response.last_appid ?? 0;
+
+      logger.debug(`Fetched ${apps.length} apps (total: ${allApps.length})`, {
+        lastAppId,
+        hasMore,
+      });
+
+      // Small delay between pagination requests
+      if (hasMore) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+    }
+
+    steamAppListCache.set(cacheKey, allApps);
+    logger.info(`Fetched and cached ${allApps.length} Steam apps`);
+
+    return allApps;
+  } catch (error) {
+    logger.error('Failed to fetch Steam app list', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    // Return partial results if any were fetched
+    return allApps.length > 0 ? allApps : [];
+  }
 }
 
 /**

@@ -12,8 +12,17 @@ export const SteamAppSchema = z.object({
 });
 
 export const SteamAppListResponseSchema = z.object({
-  applist: z.object({
-    apps: z.array(SteamAppSchema),
+  response: z.object({
+    apps: z.array(
+      z.object({
+        appid: z.number(),
+        name: z.string(),
+        last_modified: z.number().optional(),
+        price_change_number: z.number().optional(),
+      }),
+    ),
+    have_more_results: z.boolean().optional(),
+    last_appid: z.number().optional(),
   }),
 });
 
