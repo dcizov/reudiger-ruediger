@@ -1,11 +1,12 @@
 import process from 'node:process';
 import { URL } from 'node:url';
-import { Client, GatewayIntentBits } from 'discord.js';
+import { Client, Events, GatewayIntentBits } from 'discord.js';
 
 import { env, isDev } from './config.js';
 import { stopDealScheduler } from './services/schedulerService.js';
 import { loadEvents } from './util/loaders.js';
 import { logger } from './util/logger.js';
+import { getSteamAppList } from './util/steamWebApi.js';
 import { startWebhookServer } from './webhookServer.js';
 
 const client = new Client({
@@ -38,6 +39,20 @@ for (const event of events) {
     client.on(event.name, (...args) => void eventHandler(...args));
   }
 }
+
+client.once(Events.ClientReady, (readyClient) => {
+  logger.info(`✅ Ready! Logged in as ${readyClient.user.tag}`);
+
+  // Load Steam app list in background (don't block bot startup)
+  void getSteamAppList()
+    .then((apps) => {
+      logger.info(`✅ Pre-loaded ${apps.length} Steam apps for autocomplete`);
+    })
+    .catch((error) => {
+      logger.error('Failed to pre-load Steam app list:', error);
+      logger.warn('⚠️ Steam game autocomplete will be slow until cache loads');
+    });
+});
 
 // DISCORD_TOKEN is already validated by Zod in config.ts, no need to check again
 await client.login(env.DISCORD_TOKEN);

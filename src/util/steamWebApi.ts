@@ -361,10 +361,11 @@ export async function getSteamAppList(): Promise<SteamApp[]> {
 
 /**
  * Search Steam apps by name (case-insensitive partial match)
+ * Results are sorted by relevance: exact match > starts with > contains
  *
  * @param query - Search query
  * @param limit - Maximum number of results (default: 25)
- * @returns Matching Steam apps
+ * @returns Matching Steam apps sorted by relevance
  */
 export async function searchSteamApps(
   query: string,
@@ -373,19 +374,35 @@ export async function searchSteamApps(
   const apps = await getSteamAppList();
   const lowerQuery = query.toLowerCase();
 
-  const results = apps
+  // Score-based sorting for better relevance
+  const scored = apps
     .filter((app) => app.name.toLowerCase().includes(lowerQuery))
-    .slice(0, limit);
+    .map((app) => {
+      const lowerName = app.name.toLowerCase();
+      let score = 0;
+
+      // Exact match gets highest priority
+      if (lowerName === lowerQuery) score = 100;
+      // Starts with query gets medium priority
+      else if (lowerName.startsWith(lowerQuery)) score = 50;
+      // Contains query gets lowest priority
+      else score = 10;
+
+      return { app, score };
+    })
+    .sort((a, b) => b.score - a.score) // Sort by score descending
+    .slice(0, limit)
+    .map((item) => item.app);
 
   logger.debug(
-    `Steam app search: "${query}" returned ${results.length} results`,
+    `Steam app search: "${query}" returned ${scored.length} results`,
     {
       query,
-      resultCount: results.length,
+      resultCount: scored.length,
     },
   );
 
-  return results;
+  return scored;
 }
 
 // ============================================================================

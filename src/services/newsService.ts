@@ -10,19 +10,18 @@ import { newsSettings, postedNews } from '../db/schema.js';
 import {
   FeedEntrySchema,
   FeedResponseSchema,
-  SteamCommunityDataSchema,
   SteamNewsResponseSchema,
-  SteamPartnerEventDataSchema,
-  SteamPartnerEventSchema,
   type RSSFeedItem,
   type SteamNewsItem,
 } from '../schemas/news.js';
 import { getBotConfig } from '../util/botConfig.js';
 import { logger } from '../util/logger.js';
+import { fetchWithRetry } from '../util/retryFetch.js';
 import {
   sanitizeDiscordDescription,
   sanitizeDiscordText,
 } from '../util/sanitizeText.js';
+import { getSteamStoreDetails } from '../util/steamWebApi.js';
 
 // Infer types from Drizzle schema
 type NewsSetting = typeof newsSettings.$inferSelect;
@@ -277,174 +276,134 @@ function extractImageFromDescription(description: string): string | undefined {
 }
 
 /**
- * Extract article-specific image from Steam Community article page
- * Steam embeds article data in JSON within data-partnereventstore attribute
+ * Get game metadata from Steam Store API for enriching news embeds
+ * @param appId - Steam app ID
+ * @returns Formatted metadata string or null
+ */
+async function getSteamGameMetadata(appId: number): Promise<string | null> {
+  try {
+    const storeDetails = await getSteamStoreDetails(appId);
+
+    if (!storeDetails?.success || !storeDetails.data) {
+      return null;
+    }
+
+    const game = storeDetails.data;
+    const metadataParts: string[] = [];
+
+    // Add price information
+    if (game.is_free) {
+      metadataParts.push('Free to Play');
+    } else if (game.price_overview) {
+      const price = game.price_overview;
+      if (price.discount_percent > 0) {
+        metadataParts.push(
+          `${price.final_formatted} (-${price.discount_percent}%)`,
+        );
+      } else {
+        metadataParts.push(price.final_formatted);
+      }
+    }
+
+    // Add rating if available (requires sufficient reviews)
+    if (game.metacritic?.score) {
+      metadataParts.push(`Metacritic: ${game.metacritic.score}`);
+    }
+
+    // Add release status
+    if (!game.release_date?.coming_soon) {
+      // Game is released, show review score if available
+      const totalReviews = game.recommendations?.total;
+      if (totalReviews && totalReviews > 100) {
+        // Only show if we have meaningful review count
+        metadataParts.push(`${totalReviews.toLocaleString()} reviews`);
+      }
+    } else if (game.release_date?.date) {
+      metadataParts.push(`Releasing ${game.release_date.date}`);
+    }
+
+    return metadataParts.length > 0 ? metadataParts.join(' • ') : null;
+  } catch (error) {
+    logger.debug('Failed to fetch Steam game metadata', {
+      appId,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+    return null;
+  }
+}
+
+/**
+ * Get high-quality game image from Steam Store API
+ * Uses official Store API with built-in caching and rate limiting
  *
- * @param articleUrl - Full Steam Community article URL
- * @param gid - Article GID from Steam API (used to match correct event in JSON)
+ * @param appId - Steam app ID
  * @returns Promise resolving to image URL or null
  */
-async function fetchSteamArticleData(
-  articleUrl: string,
-  gid: string,
-): Promise<string | null> {
+async function getSteamGameImage(appId: number): Promise<string | null> {
+  const cacheKey = `game_image_${appId}`;
+
   // Check cache first
-  const cached = STEAM_IMAGE_CACHE.get(gid);
+  const cached = STEAM_IMAGE_CACHE.get(cacheKey);
   if (cached && Date.now() - cached.timestamp < IMAGE_CACHE_TTL) {
     steamImageCacheHits++;
-    logger.debug('Using cached Steam article image', { gid });
+    logger.debug('Using cached Steam game image', { appId });
     return cached.imageUrl;
   }
   steamImageCacheMisses++;
 
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(
-      () => controller.abort(),
-      env.STEAM_IMAGE_FETCH_TIMEOUT,
-    );
+    // Use Store API to get official game images (includes rate limiting & retry logic)
+    const storeDetails = await getSteamStoreDetails(appId);
 
-    const response = await fetch(articleUrl, {
-      signal: controller.signal,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; DiscordBot/1.0)',
-      },
-    });
-
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      STEAM_IMAGE_CACHE.set(gid, { imageUrl: null, timestamp: Date.now() });
+    if (!storeDetails?.success || !storeDetails.data) {
+      STEAM_IMAGE_CACHE.set(cacheKey, {
+        imageUrl: null,
+        timestamp: Date.now(),
+      });
       return null;
     }
 
-    const html = await response.text();
-
+    // Priority: header image > capsule image > first screenshot
     let imageUrl: string | null = null;
 
-    // Extract JSON data from data-partnereventstore attribute
-    const partnerDataMatch = /<div[^>]*data-partnereventstore="([^"]+)"/.exec(
-      html,
-    );
-
-    if (partnerDataMatch?.[1]) {
-      try {
-        // Unescape HTML entities in JSON
-        const jsonStr = partnerDataMatch[1]
-          .replace(/&quot;/g, '"')
-          .replace(/&amp;/g, '&')
-          .replace(/&lt;/g, '<')
-          .replace(/&gt;/g, '>')
-          .replace(/&#039;/g, "'")
-          .replace(/&apos;/g, "'");
-
-        const eventsRaw: unknown = JSON.parse(jsonStr);
-
-        // Validate events array with Zod
-        if (Array.isArray(eventsRaw)) {
-          const eventsResult = z
-            .array(SteamPartnerEventSchema)
-            .safeParse(eventsRaw);
-
-          if (eventsResult.success) {
-            const events = eventsResult.data;
-            const event = events.find((e) => e.gid === gid);
-
-            if (event?.jsondata) {
-              // Parse nested jsondata if it's a string
-              const eventDataRaw: unknown =
-                typeof event.jsondata === 'string'
-                  ? JSON.parse(event.jsondata)
-                  : event.jsondata;
-
-              // Validate event data with Zod
-              const eventDataResult =
-                SteamPartnerEventDataSchema.safeParse(eventDataRaw);
-
-              if (eventDataResult.success) {
-                const eventData = eventDataResult.data;
-                const imageHash = eventData.localized_title_image?.[0];
-
-                if (imageHash) {
-                  // Extract clan account ID from data-community attribute
-                  const communityDataMatch = /data-community="([^"]+)"/.exec(
-                    html,
-                  );
-
-                  if (communityDataMatch?.[1]) {
-                    try {
-                      const communityStr = communityDataMatch[1]
-                        .replace(/&quot;/g, '"')
-                        .replace(/&amp;/g, '&');
-
-                      const communityDataRaw: unknown =
-                        JSON.parse(communityStr);
-
-                      // Validate community data with Zod
-                      const communityDataResult =
-                        SteamCommunityDataSchema.safeParse(communityDataRaw);
-
-                      if (communityDataResult.success) {
-                        const clanAccountID =
-                          communityDataResult.data.CLANACCOUNTID;
-                        imageUrl = `https://clan.fastly.steamstatic.com/images/${clanAccountID}/${imageHash}`;
-                        logger.debug(
-                          'Extracted Steam article image from JSON',
-                          {
-                            gid,
-                            clanAccountID,
-                            imageHash,
-                            imageUrl,
-                          },
-                        );
-                      }
-                    } catch (communityParseError) {
-                      logger.debug('Failed to parse data-community JSON', {
-                        gid,
-                        error: communityParseError,
-                      });
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      } catch (jsonParseError) {
-        logger.debug('Failed to parse data-partnereventstore JSON', {
-          gid,
-          url: articleUrl,
-          error: jsonParseError,
-        });
+    if (storeDetails.data.header_image) {
+      imageUrl = storeDetails.data.header_image;
+    } else if (storeDetails.data.capsule_image) {
+      imageUrl = storeDetails.data.capsule_image;
+    } else if (
+      storeDetails.data.screenshots &&
+      storeDetails.data.screenshots.length > 0
+    ) {
+      const firstScreenshot = storeDetails.data.screenshots[0];
+      if (firstScreenshot?.path_full) {
+        imageUrl = firstScreenshot.path_full;
       }
     }
 
-    // Fallback to og:image if JSON parsing failed
-    if (!imageUrl) {
-      const ogImageMatch = /<meta property="og:image" content="([^"]+)"/.exec(
-        html,
-      );
-      if (ogImageMatch?.[1]) {
-        imageUrl = ogImageMatch[1];
-        logger.debug('Using og:image fallback for Steam article', {
-          gid,
-          imageUrl,
-        });
-      }
-    }
+    // Cache the result
+    STEAM_IMAGE_CACHE.set(cacheKey, { imageUrl, timestamp: Date.now() });
 
-    // Cache the result (even if null) to avoid repeated failed attempts
-    STEAM_IMAGE_CACHE.set(gid, { imageUrl, timestamp: Date.now() });
+    logger.debug('Fetched Steam game image from Store API', {
+      appId,
+      imageUrl,
+      source: imageUrl?.includes('header')
+        ? 'header'
+        : imageUrl?.includes('capsule')
+          ? 'capsule'
+          : imageUrl?.includes('screenshots')
+            ? 'screenshot'
+            : 'unknown',
+    });
+
     return imageUrl;
   } catch (error) {
-    logger.debug('Failed to fetch Steam article image', {
-      url: articleUrl,
-      gid,
+    logger.debug('Failed to fetch Steam game image from Store API', {
+      appId,
       error: error instanceof Error ? error.message : 'Unknown error',
     });
 
     // Cache null result to prevent retry spam
-    STEAM_IMAGE_CACHE.set(gid, { imageUrl: null, timestamp: Date.now() });
+    STEAM_IMAGE_CACHE.set(cacheKey, { imageUrl: null, timestamp: Date.now() });
     return null;
   }
 }
@@ -498,6 +457,7 @@ async function fetchWowheadArticleImage(
 /**
  * Fetch Steam news from API (without cache)
  * Uses feed filtering for higher quality content
+ * Includes retry logic for reliability
  */
 async function fetchSteamNews(
   appId: number,
@@ -506,17 +466,34 @@ async function fetchSteamNews(
   // Filter for official announcements and blog posts only (higher quality)
   const feeds = 'steam_community_announcements,steam_community_blog';
 
-  const response = await fetch(
-    `https://api.steampowered.com/ISteamNews/GetNewsForApp/v2/?appid=${appId}&count=${count}&feeds=${feeds}&format=json`,
-  );
+  const url = `https://api.steampowered.com/ISteamNews/GetNewsForApp/v2/?appid=${appId}&count=${count}&feeds=${feeds}&format=json`;
+
+  // Use fetchWithRetry for automatic retry on failures
+  const response = await fetchWithRetry(url);
 
   if (!response.ok) {
-    throw new Error(`Steam API returned ${response.status}`);
+    logger.warn(`Steam News API returned ${response.status}`, {
+      appId,
+      status: response.status,
+      statusText: response.statusText,
+    });
+    throw new Error(`Steam News API returned ${response.status}`);
   }
 
   const rawData: unknown = await response.json();
-  const data = SteamNewsResponseSchema.parse(rawData);
-  return data.appnews.newsitems;
+
+  // Validate response with Zod schema
+  const result = SteamNewsResponseSchema.safeParse(rawData);
+
+  if (!result.success) {
+    logger.error('Steam News API response validation failed', {
+      appId,
+      error: z.treeifyError(result.error),
+    });
+    throw new Error('Steam News API response validation failed');
+  }
+
+  return result.data.appnews.newsitems;
 }
 
 /**
@@ -929,35 +906,20 @@ export async function checkGameNews(
           .reverse()
           .slice(0, 3);
 
-        // Fetch images in parallel for all items to post
-        const imageResults = await Promise.allSettled(
-          itemsToPost.map((item) => {
-            const isSteamCommunity = item.url.includes('steamcommunity.com');
-            if (isSteamCommunity) {
-              return fetchSteamArticleData(item.url, item.gid);
-            }
-            return Promise.resolve(null);
-          }),
-        );
+        // Fetch game data from Store API once (shared by all articles)
+        const [gameImageUrl, gameMetadata] = await Promise.all([
+          getSteamGameImage(source.appId),
+          getSteamGameMetadata(source.appId),
+        ]);
 
-        // Post each article with its fetched image
-        for (let i = 0; i < itemsToPost.length; i++) {
-          const item = itemsToPost[i];
+        // Post each article with the game image and metadata
+        for (const item of itemsToPost) {
           if (!item) continue; // Skip if item is undefined
 
-          const imageResult = imageResults[i];
-          if (!imageResult) continue; // Skip if result is undefined
-
-          const isSteamCommunity = item.url.includes('steamcommunity.com');
-
-          // Get image from parallel fetch result
-          let imageUrl: string | null = null;
-          if (isSteamCommunity && imageResult.status === 'fulfilled') {
-            imageUrl = imageResult.value;
-          }
-
-          // Fallback to game header image if no article-specific image found
-          imageUrl ??= `https://cdn.cloudflare.steamstatic.com/steam/apps/${source.appId}/header.jpg`;
+          // Use Store API image as primary, fallback to CDN header
+          const imageUrl =
+            gameImageUrl ??
+            `https://cdn.cloudflare.steamstatic.com/steam/apps/${source.appId}/header.jpg`;
 
           const cleanContent = cleanSteamContent(item.contents);
           const description =
@@ -965,7 +927,10 @@ export async function checkGameNews(
               ? cleanContent.slice(0, 397) + '...'
               : cleanContent;
 
-          // Use tags if available, otherwise feedlabel
+          // Check if this is a Steam Community article
+          const isSteamCommunity = item.url.includes('steamcommunity.com');
+
+          // Build footer text with metadata
           let footerText: string;
           if (item.tags && item.tags.length > 0 && item.tags[0]) {
             footerText = item.tags[0]; // Use primary tag
@@ -973,6 +938,13 @@ export async function checkGameNews(
             footerText = item.feedlabel;
           } else {
             footerText = isSteamCommunity ? 'Steam News' : 'External Article';
+          }
+
+          // Add game metadata if available
+          if (gameMetadata) {
+            footerText = `${source.name} • ${gameMetadata}`;
+          } else {
+            footerText = `${source.name} • ${footerText}`;
           }
 
           const embed = new EmbedBuilder()
@@ -983,7 +955,7 @@ export async function checkGameNews(
             )
             .setColor(source.color)
             .setFooter({
-              text: sanitizeDiscordText(footerText, 100),
+              text: sanitizeDiscordText(footerText, 200),
             })
             .setTimestamp(item.date * 1000);
 
@@ -1006,9 +978,8 @@ export async function checkGameNews(
             logger.debug(`Posted ${source.name} news to channel`, {
               channelId,
               itemId: item.gid,
-              isSteamCommunity,
               hasImage: !!imageUrl,
-              imageFetchSuccess: imageResult.status === 'fulfilled',
+              imageSource: gameImageUrl ? 'Store API' : 'CDN fallback',
               tags: item.tags,
               feedLabel: item.feedlabel,
             });

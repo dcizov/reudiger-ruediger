@@ -3,6 +3,7 @@ import cron, { type ScheduledTask } from 'node-cron';
 
 import { getBotConfig } from '../util/botConfig.js';
 import { logger } from '../util/logger.js';
+import { getSteamAppList } from '../util/steamWebApi.js';
 import { cleanupExpiredDeals } from './cleanupDeals.js';
 import {
   checkGameNews,
@@ -19,6 +20,7 @@ let subscriptionTask: ScheduledTask | null = null;
 let steamWishlistTask: ScheduledTask | null = null;
 let newsTask: ScheduledTask | null = null;
 let newsCleanupTask: ScheduledTask | null = null;
+let steamCacheTask: ScheduledTask | null = null;
 
 export async function startDealScheduler(client: Client): Promise<void> {
   if (currentTask) void currentTask.stop();
@@ -27,6 +29,7 @@ export async function startDealScheduler(client: Client): Promise<void> {
   if (steamWishlistTask) void steamWishlistTask.stop();
   if (newsTask) void newsTask.stop();
   if (newsCleanupTask) void newsCleanupTask.stop();
+  if (steamCacheTask) void steamCacheTask.stop();
 
   const config = await getBotConfig();
   const dealSchedule = config.schedule || '*/30 * * * *';
@@ -87,8 +90,20 @@ export async function startDealScheduler(client: Client): Promise<void> {
     })();
   });
 
+  steamCacheTask = cron.schedule('0 3 * * *', () => {
+    void (async () => {
+      logger.info('🔄 Refreshing Steam app list cache...');
+      try {
+        const apps = await getSteamAppList();
+        logger.info(`✅ Steam app list cache refreshed: ${apps.length} apps`);
+      } catch (error) {
+        logger.error('❌ Steam cache refresh failed:', error);
+      }
+    })();
+  });
+
   logger.info(
-    `Scheduler started: Deals on schedule '${dealSchedule}', cleanup hourly, subscription check every 15m, Steam wishlist check every 15m, news check every 15m.`,
+    `Scheduler started: Deals on schedule '${dealSchedule}', cleanup hourly, subscription check every 15m, Steam wishlist check every 15m, news check every 15m, Steam cache refresh daily.`,
   );
 }
 
@@ -116,6 +131,10 @@ export function stopDealScheduler(): void {
   if (newsCleanupTask) {
     void newsCleanupTask.stop();
     newsCleanupTask = null;
+  }
+  if (steamCacheTask) {
+    void steamCacheTask.stop();
+    steamCacheTask = null;
   }
 
   logger.info('✅ All schedulers stopped gracefully');

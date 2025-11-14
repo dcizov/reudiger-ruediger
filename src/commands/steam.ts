@@ -10,6 +10,7 @@ import { eq } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { steamProfiles } from '../db/schema.js';
 import { handleCommandError } from '../util/commandError.js';
+import { logger } from '../util/logger.js';
 import {
   getOwnedGames,
   getPlayerSummary,
@@ -83,32 +84,49 @@ export default {
 
   async autocomplete(interaction: AutocompleteInteraction) {
     const subcommand = interaction.options.getSubcommand();
+    const focused = interaction.options.getFocused();
 
     // Only provide autocomplete for /steam game
     if (subcommand === 'game') {
-      const focused = interaction.options.getFocused();
-
-      // Require at least 2 characters for search
-      if (!focused || focused.length < 2) {
-        await interaction.respond([]);
-        return;
-      }
-
       try {
+        // Show popular games when query is empty
+        if (!focused || focused.length === 0) {
+          const popularGames = [
+            { name: 'Counter-Strike 2', value: '730' },
+            { name: 'Dota 2', value: '570' },
+            { name: 'Team Fortress 2', value: '440' },
+            { name: 'PUBG: BATTLEGROUNDS', value: '578080' },
+            { name: 'Apex Legends', value: '1172470' },
+            { name: 'Grand Theft Auto V', value: '271590' },
+            { name: 'Rust', value: '252490' },
+            { name: 'Elden Ring', value: '1245620' },
+            { name: "Baldur's Gate 3", value: '1086940' },
+            { name: 'Cyberpunk 2077', value: '1091500' },
+          ];
+          return await interaction.respond(popularGames);
+        }
+
+        // Require 2+ characters for search
+        if (focused.length < 2) {
+          return await interaction.respond([]);
+        }
+
         const results = await searchSteamApps(focused, 25);
         const suggestions = results.map((app) => ({
-          name: app.name.slice(0, 100), // Discord autocomplete limit
+          name: app.name.slice(0, 100),
           value: String(app.appid),
         }));
 
         await interaction.respond(suggestions);
-      } catch {
+      } catch (error) {
         // Silently fail autocomplete - don't interrupt user
+        logger.debug('Steam autocomplete error:', error);
         await interaction.respond([]);
       }
-    } else {
-      await interaction.respond([]);
+      return;
     }
+
+    await interaction.respond([]);
   },
 } satisfies SubcommandCommand;
 
