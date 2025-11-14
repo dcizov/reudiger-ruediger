@@ -19,7 +19,8 @@ FROM base AS deps
 
 COPY package.json package-lock.json ./
 
-RUN npm ci --omit=dev
+ENV CI=true
+RUN npm ci --omit=dev --ignore-scripts
 
 FROM base AS builder
 
@@ -28,6 +29,7 @@ COPY package.json package-lock.json ./
 RUN npm ci
 
 COPY src ./src
+COPY drizzle ./drizzle
 COPY drizzle.config.ts tsconfig.json ./
 
 RUN npm run build

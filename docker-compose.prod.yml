@@ -7,19 +7,37 @@ services:
       - .env.production
     environment:
       NODE_ENV: production
+      DATABASE_URL: postgresql://${DATABASE_USER:-postgres}:${DATABASE_PASSWORD}@postgres-db:5432/${DATABASE_NAME:-reudiger-ruediger}
     command: ['npm', 'start']
     restart: unless-stopped
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       postgres-db:
         condition: service_healthy
     networks:
       - reudiger-network
 
+  migrate:
+    build:
+      context: .
+      target: builder
+    env_file:
+      - .env.production
+    environment:
+      DATABASE_URL: postgresql://${DATABASE_USER:-postgres}:${DATABASE_PASSWORD}@postgres-db:5432/${DATABASE_NAME:-reudiger-ruediger}
+    command: npm run migrate
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+    networks:
+      - reudiger-network
+    restart: 'no'
+
   postgres-db:
     container_name: reudiger-ruediger-postgres-prod
     image: postgres:16-alpine
     environment:
-      # Use individual vars from .env.production
       POSTGRES_USER: ${DATABASE_USER:-postgres}
       POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
       POSTGRES_DB: ${DATABASE_NAME:-reudiger-ruediger}
