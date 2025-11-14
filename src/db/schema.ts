@@ -206,30 +206,3 @@ export const steamProfiles = pgTable(
     index('steam_profiles_steam_id_idx').on(table.steamId),
   ],
 );
-
-/**
- * Steam Wishlists - User wishlists with price alert functionality
- * Users can add Steam games and get notified when prices drop
- * Max 20 items per user (enforced in application logic)
- */
-export const steamWishlists = pgTable(
-  'steam_wishlists',
-  {
-    id: serial('id').primaryKey(),
-    userId: varchar('user_id', { length: 64 }).notNull(),
-    steamAppId: integer('steam_app_id').notNull(),
-    gameName: text('game_name').notNull(),
-    addedPrice: integer('added_price'), // Price in cents when added
-    targetPrice: integer('target_price'), // Alert when price drops below (cents)
-    notified: boolean('notified').default(false).notNull(),
-    createdAt: timestamp('created_at').notNull().defaultNow(),
-  },
-  (table) => [
-    index('steam_wishlists_user_id_idx').on(table.userId),
-    index('steam_wishlists_steam_app_id_idx').on(table.steamAppId),
-    uniqueIndex('steam_wishlists_user_app_unique').on(
-      table.userId,
-      table.steamAppId,
-    ),
-  ],
-);

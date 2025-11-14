@@ -1,0 +1,1 @@
+DROP TABLE "steam_wishlists" CASCADE;

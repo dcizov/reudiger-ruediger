@@ -11,13 +11,11 @@ import {
   cleanupOldPostedNews,
 } from './newsService.js';
 import { postNewDeals } from './postNewDeals.js';
-import { checkSteamWishlistsAndNotify } from './steamWishlistChecker.js';
 import { checkSubscriptionsAndNotify } from './subscriptionChecker.js';
 
 let currentTask: ScheduledTask | null = null;
 let cleanupTask: ScheduledTask | null = null;
 let subscriptionTask: ScheduledTask | null = null;
-let steamWishlistTask: ScheduledTask | null = null;
 let newsTask: ScheduledTask | null = null;
 let newsCleanupTask: ScheduledTask | null = null;
 let steamCacheTask: ScheduledTask | null = null;
@@ -26,7 +24,6 @@ export async function startDealScheduler(client: Client): Promise<void> {
   if (currentTask) void currentTask.stop();
   if (cleanupTask) void cleanupTask.stop();
   if (subscriptionTask) void subscriptionTask.stop();
-  if (steamWishlistTask) void steamWishlistTask.stop();
   if (newsTask) void newsTask.stop();
   if (newsCleanupTask) void newsCleanupTask.stop();
   if (steamCacheTask) void steamCacheTask.stop();
@@ -54,16 +51,6 @@ export async function startDealScheduler(client: Client): Promise<void> {
       const notified = await checkSubscriptionsAndNotify(client);
       if (notified > 0)
         logger.info(`🔔 Notified ${notified} subscribed user(s).`, {
-          notified,
-        });
-    })();
-  });
-
-  steamWishlistTask = cron.schedule('*/15 * * * *', () => {
-    void (async () => {
-      const notified = await checkSteamWishlistsAndNotify(client);
-      if (notified > 0)
-        logger.info(`🎮 Notified ${notified} Steam wishlist user(s).`, {
           notified,
         });
     })();
@@ -103,7 +90,7 @@ export async function startDealScheduler(client: Client): Promise<void> {
   });
 
   logger.info(
-    `Scheduler started: Deals on schedule '${dealSchedule}', cleanup hourly, subscription check every 15m, Steam wishlist check every 15m, news check every 15m, Steam cache refresh daily.`,
+    `Scheduler started: Deals on schedule '${dealSchedule}', cleanup hourly, subscription check every 15m, news check every 15m, Steam cache refresh daily.`,
   );
 }
 
@@ -119,10 +106,6 @@ export function stopDealScheduler(): void {
   if (subscriptionTask) {
     void subscriptionTask.stop();
     subscriptionTask = null;
-  }
-  if (steamWishlistTask) {
-    void steamWishlistTask.stop();
-    steamWishlistTask = null;
   }
   if (newsTask) {
     void newsTask.stop();
