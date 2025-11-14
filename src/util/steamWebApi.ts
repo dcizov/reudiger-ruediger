@@ -278,7 +278,7 @@ export async function getSteamAppList(): Promise<SteamApp[]> {
   logger.info('Fetching Steam app list from API...');
 
   const response = await steamApiRequest(
-    '/ISteamApps/GetAppList/v2/',
+    '/ISteamApps/GetAppList/v2',
     {},
     SteamAppListResponseSchema,
   );
