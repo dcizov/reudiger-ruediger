@@ -261,9 +261,16 @@ async function steamApiRequest<T>(
 // ============================================================================
 
 /**
+ * In-flight request tracker for Steam app list fetching
+ * Prevents multiple concurrent fetches when cache is cold
+ */
+let steamAppListFetchPromise: Promise<SteamApp[]> | null = null;
+
+/**
  * Get complete list of all Steam apps with pagination
  * Uses IStoreService/GetAppList/v1 endpoint (requires API key)
  * Cached for 24 hours to minimize API calls
+ * Implements request coalescing to prevent duplicate concurrent fetches
  *
  * @returns Array of Steam apps or empty array on error
  */
@@ -272,8 +279,14 @@ export async function getSteamAppList(): Promise<SteamApp[]> {
   const cached = steamAppListCache.get(cacheKey);
 
   if (cached) {
-    logger.debug('Using cached Steam app list', { appCount: cached.length });
+    // Reduced verbosity: cache hits are expected
     return cached;
+  }
+
+  // Request coalescing: if a fetch is already in progress, wait for it
+  if (steamAppListFetchPromise) {
+    logger.debug('Steam app list fetch already in progress, waiting...');
+    return steamAppListFetchPromise;
   }
 
   if (!env.STEAM_API_KEY) {
@@ -283,80 +296,87 @@ export async function getSteamAppList(): Promise<SteamApp[]> {
 
   logger.info('Fetching Steam app list from API (this may take a moment)...');
 
-  const allApps: SteamApp[] = [];
-  let lastAppId = 0;
-  let hasMore = true;
+  // Create the fetch promise and store it for concurrent requests
+  steamAppListFetchPromise = (async (): Promise<SteamApp[]> => {
+    const allApps: SteamApp[] = [];
+    let lastAppId = 0;
+    let hasMore = true;
 
-  try {
-    while (hasMore) {
-      // Acquire rate limit token
-      await rateLimiter.acquire();
+    try {
+      while (hasMore) {
+        // Acquire rate limit token
+        await rateLimiter.acquire();
 
-      // Construct URL for IStoreService/GetAppList/v1
-      const url = new URL(
-        'https://api.steampowered.com/IStoreService/GetAppList/v1/',
-      );
-      url.searchParams.append('key', env.STEAM_API_KEY);
-      url.searchParams.append('include_games', 'true');
-      url.searchParams.append('max_results', '50000');
+        // Construct URL for IStoreService/GetAppList/v1
+        const url = new URL(
+          'https://api.steampowered.com/IStoreService/GetAppList/v1/',
+        );
+        // Non-null assertion is safe here because we check env.STEAM_API_KEY before entering the IIFE
+        url.searchParams.append('key', env.STEAM_API_KEY!);
+        url.searchParams.append('include_games', 'true');
+        url.searchParams.append('max_results', '50000');
 
-      if (lastAppId > 0) {
-        url.searchParams.append('last_appid', String(lastAppId));
+        if (lastAppId > 0) {
+          url.searchParams.append('last_appid', String(lastAppId));
+        }
+
+        const response = await fetchWithRetry(url.toString());
+
+        if (!response.ok) {
+          logger.warn(`Steam GetAppList failed: ${response.status}`, {
+            status: response.status,
+            statusText: response.statusText,
+          });
+          break;
+        }
+
+        const rawData: unknown = await response.json();
+        const result = SteamAppListResponseSchema.safeParse(rawData);
+
+        if (!result.success) {
+          logger.error('Steam app list validation failed', {
+            error: z.treeifyError(result.error),
+          });
+          break;
+        }
+
+        // Map to simpler SteamApp structure (appid + name only)
+        const apps = result.data.response.apps.map((app) => ({
+          appid: app.appid,
+          name: app.name,
+        }));
+
+        allApps.push(...apps);
+
+        hasMore = result.data.response.have_more_results ?? false;
+        lastAppId = result.data.response.last_appid ?? 0;
+
+        // Reduced verbosity: pagination progress is internal detail
+        // Only log final result in info log below
+
+        // Small delay between pagination requests
+        if (hasMore) {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
       }
 
-      const response = await fetchWithRetry(url.toString());
+      steamAppListCache.set(cacheKey, allApps);
+      logger.info(`Fetched and cached ${allApps.length} Steam apps`);
 
-      if (!response.ok) {
-        logger.warn(`Steam GetAppList failed: ${response.status}`, {
-          status: response.status,
-          statusText: response.statusText,
-        });
-        break;
-      }
-
-      const rawData: unknown = await response.json();
-      const result = SteamAppListResponseSchema.safeParse(rawData);
-
-      if (!result.success) {
-        logger.error('Steam app list validation failed', {
-          error: z.treeifyError(result.error),
-        });
-        break;
-      }
-
-      // Map to simpler SteamApp structure (appid + name only)
-      const apps = result.data.response.apps.map((app) => ({
-        appid: app.appid,
-        name: app.name,
-      }));
-
-      allApps.push(...apps);
-
-      hasMore = result.data.response.have_more_results ?? false;
-      lastAppId = result.data.response.last_appid ?? 0;
-
-      logger.debug(`Fetched ${apps.length} apps (total: ${allApps.length})`, {
-        lastAppId,
-        hasMore,
+      return allApps;
+    } catch (error) {
+      logger.error('Failed to fetch Steam app list', {
+        error: error instanceof Error ? error.message : String(error),
       });
-
-      // Small delay between pagination requests
-      if (hasMore) {
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      }
+      // Return partial results if any were fetched
+      return allApps.length > 0 ? allApps : [];
+    } finally {
+      // Clear the in-flight promise when done (success or failure)
+      steamAppListFetchPromise = null;
     }
+  })();
 
-    steamAppListCache.set(cacheKey, allApps);
-    logger.info(`Fetched and cached ${allApps.length} Steam apps`);
-
-    return allApps;
-  } catch (error) {
-    logger.error('Failed to fetch Steam app list', {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    // Return partial results if any were fetched
-    return allApps.length > 0 ? allApps : [];
-  }
+  return steamAppListFetchPromise;
 }
 
 /**
@@ -394,14 +414,7 @@ export async function searchSteamApps(
     .slice(0, limit)
     .map((item) => item.app);
 
-  logger.debug(
-    `Steam app search: "${query}" returned ${scored.length} results`,
-    {
-      query,
-      resultCount: scored.length,
-    },
-  );
-
+  // Reduced verbosity: search results logged in steamAppIdResolver.ts
   return scored;
 }
 

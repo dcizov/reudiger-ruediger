@@ -12,7 +12,11 @@ import { env } from '../config.js';
 import type { ItadDeal } from '../schemas/itadDeals.js';
 import type { SteamGameMetadata } from '../schemas/steamStore.js';
 import { getBotConfig } from '../util/botConfig.js';
-import { generateDealId, getItadDeals } from '../util/itadDeals.js';
+import {
+  filterValidGameDeals,
+  generateDealId,
+  getItadDeals,
+} from '../util/itadDeals.js';
 import type { ItadGameOverview } from '../util/itadPrice.js';
 import { getItadGameOverview } from '../util/itadPrice.js';
 import { logger } from '../util/logger.js';
@@ -73,13 +77,28 @@ export async function postNewDeals(
 
   if (rawDeals.length === 0) return 0;
 
+  // Filter out non-game items (educational bundles, certification courses, etc.)
+  const gameDeals = filterValidGameDeals(rawDeals);
+  logger.info(
+    `🎮 Filtered to ${gameDeals.length} valid game deals (removed ${rawDeals.length - gameDeals.length} non-game items)`,
+    {
+      validGameCount: gameDeals.length,
+      removedCount: rawDeals.length - gameDeals.length,
+    },
+  );
+
+  if (gameDeals.length === 0) {
+    logger.info('📭 No valid game deals found after filtering');
+    return 0;
+  }
+
   const postedIDs = new Set(await getPostedDealIDs());
   logger.info(`🗄️ Found ${postedIDs.size} previously posted deals in DB`, {
     postedIDsCount: postedIDs.size,
   });
 
   // Filter out already posted deals using generated deal IDs
-  const newDeals = rawDeals.filter((deal: ItadDeal) => {
+  const newDeals = gameDeals.filter((deal: ItadDeal) => {
     const dealId = generateDealId(deal);
     return !postedIDs.has(dealId);
   });

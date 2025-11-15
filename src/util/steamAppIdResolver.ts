@@ -34,10 +34,8 @@ async function getDbMapping(itadGameId: string): Promise<number | null> {
       .limit(1);
 
     if (result.length > 0 && result[0]) {
-      logger.debug('Steam App ID database hit', {
-        itadGameId,
-        steamAppId: result[0].steamAppId,
-      });
+      // Only log on cache hit if debug logging is very verbose
+      // Reduced verbosity: cache hits are expected and don't need logging
       return result[0].steamAppId;
     }
 
@@ -71,12 +69,7 @@ async function saveDbMapping(
       })
       .onConflictDoNothing(); // Ignore if already exists
 
-    logger.debug('Steam App ID mapping saved to database', {
-      itadGameId,
-      steamAppId,
-      gameTitle,
-      method,
-    });
+    // Reduced verbosity: saving to DB is a background operation
   } catch (error) {
     logger.error('Failed to save Steam App ID mapping to database', {
       itadGameId,
@@ -113,11 +106,7 @@ const appIdCache = new Map<string, SteamAppIdMapping>();
 function getCachedAppId(itadGameId: string): number | null {
   const cached = appIdCache.get(itadGameId);
   if (cached) {
-    logger.debug('Steam App ID cache hit', {
-      itadGameId,
-      steamAppId: cached.steamAppId,
-      method: cached.method,
-    });
+    // Reduced verbosity: cache hits are expected
     return cached.steamAppId;
   }
   return null;
@@ -144,13 +133,67 @@ async function cacheAppId(
   // Database cache (persistent across restarts)
   await saveDbMapping(itadGameId, steamAppId, gameTitle, method);
 
-  logger.debug('Steam App ID cached (memory + database)', {
-    itadGameId,
-    steamAppId,
-    gameTitle,
-    method,
-    cacheSize: appIdCache.size,
-  });
+  // Reduced verbosity: caching is a background operation
+}
+
+// ============================================================================
+// Title Normalization
+// ============================================================================
+
+/**
+ * Normalize game title for better Steam search matching
+ * Strips edition suffixes, special characters, and year markers
+ *
+ * @param title - Original game title
+ * @returns Normalized title for searching
+ *
+ * @example
+ * ```ts
+ * normalizeGameTitle('Lords of the Fallen™ (2014) Game of the Year Edition')
+ * // Returns: 'Lords of the Fallen'
+ *
+ * normalizeGameTitle('Suicide Squad: Kill the Justice League - Deluxe Edition')
+ * // Returns: 'Suicide Squad: Kill the Justice League'
+ * ```
+ */
+function normalizeGameTitle(title: string): string {
+  let normalized = title;
+
+  // Remove special characters (™, ®, ©, etc.)
+  normalized = normalized.replace(/[™®©]/g, '');
+
+  // Remove year markers like (2014), (2023), etc.
+  normalized = normalized.replace(/\(\d{4}\)/g, '');
+
+  // Remove common edition suffixes (case-insensitive)
+  const editionSuffixes = [
+    /\s*-\s*Deluxe Edition$/i,
+    /\s*-\s*Digital Deluxe Edition$/i,
+    /\s*-\s*Ultimate Edition$/i,
+    /\s*-\s*Definitive Edition$/i,
+    /\s*-\s*Complete Edition$/i,
+    /\s*-\s*Legendary Edition$/i,
+    /\s*-\s*Premium Edition$/i,
+    /\s*-\s*Gold Edition$/i,
+    /\s*-\s*Standard Edition$/i,
+    /\s*-\s*Collector's Edition$/i,
+    /\s*-\s*Special Edition$/i,
+    /\s*-\s*Enhanced Edition$/i,
+    /\s*-\s*Remastered$/i,
+    /\s*-\s*Remake$/i,
+    /\s*Game of the Year Edition$/i,
+    /\s*GOTY Edition$/i,
+    /\s*Deluxe$/i,
+  ];
+
+  for (const suffix of editionSuffixes) {
+    normalized = normalized.replace(suffix, '');
+  }
+
+  // Trim and normalize whitespace
+  normalized = normalized.trim().replace(/\s+/g, ' ');
+
+  return normalized;
 }
 
 // ============================================================================
@@ -167,19 +210,14 @@ async function cacheAppId(
 function resolveByExtraction(itadGameId: string): number | null {
   const steamAppId = extractSteamAppId(itadGameId);
 
-  if (steamAppId) {
-    logger.debug('Steam App ID extracted from ITAD game ID', {
-      itadGameId,
-      steamAppId,
-    });
-  }
-
+  // Reduced verbosity: extraction is a simple operation that usually succeeds
   return steamAppId;
 }
 
 /**
  * Strategy 2: Search Steam app list by game title
  * Fallback when extraction fails (non-Steam games, bundles, etc.)
+ * Uses title normalization and fallback search for better matching
  *
  * @param gameTitle - Game title to search for
  * @param itadGameId - ITAD game ID (for logging)
@@ -190,20 +228,43 @@ async function resolveBySearch(
   itadGameId: string,
 ): Promise<number | null> {
   try {
-    const results = await searchSteamApps(gameTitle, 1);
+    // First attempt: Search with original title
+    let results = await searchSteamApps(gameTitle, 1);
 
     if (results.length > 0 && results[0]) {
       const topMatch = results[0];
-      logger.debug('Steam App ID resolved by search', {
-        itadGameId,
-        gameTitle,
-        steamAppId: topMatch.appid,
-        matchedName: topMatch.name,
-      });
+      // Reduced verbosity: only log failures and retries
       return topMatch.appid;
     }
 
-    logger.debug('No Steam App ID found by search', {
+    // Second attempt: Search with normalized title (strip editions, special chars)
+    const normalizedTitle = normalizeGameTitle(gameTitle);
+
+    // Only try normalized search if it's different from original
+    if (normalizedTitle !== gameTitle) {
+      // Log retry for debugging title normalization issues
+      logger.debug('Retrying search with normalized title', {
+        itadGameId,
+        originalTitle: gameTitle,
+        normalizedTitle,
+      });
+
+      results = await searchSteamApps(normalizedTitle, 1);
+
+      if (results.length > 0 && results[0]) {
+        const topMatch = results[0];
+        // Log successful normalization for visibility
+        logger.debug('Resolved via normalized title', {
+          itadGameId,
+          normalizedTitle,
+          steamAppId: topMatch.appid,
+        });
+        return topMatch.appid;
+      }
+    }
+
+    // No match found with either search - log failure
+    logger.debug('No Steam App ID found', {
       itadGameId,
       gameTitle,
     });

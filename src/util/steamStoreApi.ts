@@ -89,11 +89,7 @@ function setCachedMetadata(appId: number, data: SteamGameMetadata): void {
     timestamp: Date.now(),
   });
 
-  logger.debug('Steam Store API cached', {
-    appId,
-    hasMetacritic: data.metacriticScore !== null,
-    hasReviews: data.totalReviews !== null,
-  });
+  // Reduced verbosity: caching is expected behavior
 }
 
 /**

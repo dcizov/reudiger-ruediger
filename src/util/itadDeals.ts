@@ -224,6 +224,147 @@ export function filterDealsByType(
 }
 
 /**
+ * Detect non-game items by analyzing title patterns
+ * Educational bundles, certification courses, and other non-game products should be filtered out
+ *
+ * @param title - Game title to analyze
+ * @returns true if the item is likely NOT a video game
+ */
+function isNonGameTitle(title: string): boolean {
+  const lowerTitle = title.toLowerCase();
+
+  // Educational/certification keywords that indicate non-game content
+  const educationKeywords = [
+    'certification',
+    'elearning',
+    'e-learning',
+    'course',
+    'tutorial',
+    'training',
+    'bootcamp',
+    'learning path',
+    'masterclass',
+    'workshop',
+    'textbook',
+    'ebook',
+    'e-book',
+    'study guide',
+  ];
+
+  // Technology/programming keywords that often appear in educational bundles
+  const techKeywords = [
+    'python',
+    'java',
+    'c++',
+    'javascript',
+    'programming',
+    'coding',
+    'development',
+    'devops',
+    'cybersecurity',
+    'networking',
+    'linux',
+    'cloud computing',
+    'data science',
+    'machine learning',
+    'web development',
+    'software engineering',
+  ];
+
+  // Check for education keywords
+  if (educationKeywords.some((keyword) => lowerTitle.includes(keyword))) {
+    return true;
+  }
+
+  // Check for tech keywords combined with "bundle" (e.g., "Python Bundle", "C++ 4th Edition Bundle")
+  if (
+    lowerTitle.includes('bundle') &&
+    techKeywords.some((keyword) => lowerTitle.includes(keyword))
+  ) {
+    return true;
+  }
+
+  // Check for "edition" combined with tech keywords (e.g., "C++ 4th Edition")
+  if (
+    lowerTitle.includes('edition') &&
+    techKeywords.some((keyword) => lowerTitle.includes(keyword))
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Validate if a deal represents an actual video game
+ * Filters out educational bundles, certification courses, and other non-game products
+ *
+ * @param deal - ITAD deal to validate
+ * @returns true if the deal is a valid video game
+ */
+export function isValidGameDeal(deal: ItadDeal): boolean {
+  // Filter 1: Title pattern matching - exclude educational/certification content
+  if (isNonGameTitle(deal.title)) {
+    // Reduced verbosity: individual filtering logged only in aggregate
+    return false;
+  }
+
+  // Filter 2: Type validation - only accept 'game' type
+  // Educational bundles often have type=null or type='package'
+  if (deal.type !== 'game') {
+    // Reduced verbosity: individual filtering logged only in aggregate
+    return false;
+  }
+
+  // Filter 3: Platform validation - real games have valid platforms
+  // Educational content often has empty platforms array or generic "Unknown"
+  if (!deal.deal.platforms || deal.deal.platforms.length === 0) {
+    // Reduced verbosity: individual filtering logged only in aggregate
+    return false;
+  }
+
+  // Filter 4: DRM validation - real games typically have DRM info
+  // Some educational content has generic "DRM-Free" or empty DRM arrays
+  // This is a soft check - we allow DRM-Free games but flag suspicious patterns
+  const hasSuspiciousDrm =
+    deal.deal.drm.length === 0 ||
+    (deal.deal.drm.length === 1 &&
+      deal.deal.drm[0]?.name === 'DRM-Free' &&
+      deal.deal.platforms.length === 0);
+
+  if (hasSuspiciousDrm && isNonGameTitle(deal.title)) {
+    // Reduced verbosity: individual filtering logged only in aggregate
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Filter deals to only include valid video games
+ * Excludes educational bundles, certification courses, and other non-game products
+ *
+ * @param deals - Array of ITAD deals
+ * @returns Filtered deals containing only video games
+ */
+export function filterValidGameDeals(deals: ItadDeal[]): ItadDeal[] {
+  const filtered = deals.filter(isValidGameDeal);
+
+  if (filtered.length < deals.length) {
+    logger.info(
+      `Filtered out ${deals.length - filtered.length} non-game items (${filtered.length}/${deals.length} remaining)`,
+      {
+        originalCount: deals.length,
+        filteredCount: filtered.length,
+        removedCount: deals.length - filtered.length,
+      },
+    );
+  }
+
+  return filtered;
+}
+
+/**
  * Clear the deals cache (useful for testing or forced refresh)
  */
 export function clearDealsCache(): void {
