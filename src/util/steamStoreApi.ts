@@ -345,6 +345,11 @@ export async function batchGetSteamGameMetadata(
         logger.error('Steam Store API batch validation error', {
           batchSize: batch.length,
           error: parsed.error.message,
+          sampleAppIds: batch.slice(0, 3),
+          responseKeys:
+            json && typeof json === 'object'
+              ? Object.keys(json).slice(0, 5)
+              : [],
         });
         continue;
       }
@@ -360,9 +365,11 @@ export async function batchGetSteamGameMetadata(
         }
       }
 
+      const successCount = batch.filter((id) => results.has(id)).length;
       logger.debug('Steam Store API batch fetched', {
         batchSize: batch.length,
-        successCount: batch.filter((id) => results.has(id)).length,
+        successCount,
+        failedCount: batch.length - successCount,
       });
     } catch (error) {
       if ((error as Error).name === 'AbortError') {
