@@ -42,14 +42,19 @@ const metadataCache = new Map<number, CachedMetadata>();
 const CACHE_TTL = 60 * 60 * 1000; // 1 hour in milliseconds
 
 /**
- * Maximum appIds per batch request (Steam API limit)
+ * Maximum concurrent requests to Steam Store API
  */
-const MAX_BATCH_SIZE = 100;
+const MAX_CONCURRENT_REQUESTS = 10;
 
 /**
  * Request timeout (Steam API can be slow)
  */
 const REQUEST_TIMEOUT = 10000; // 10 seconds
+
+/**
+ * Delay between request batches (milliseconds)
+ */
+const BATCH_DELAY = 1000; // 1 second
 
 // ============================================================================
 // Cache Management
@@ -248,11 +253,35 @@ export async function getSteamGameMetadata(
 }
 
 /**
+ * Helper function to process requests in concurrent batches
+ */
+async function processConcurrentBatch<T, R>(
+  items: T[],
+  processor: (item: T) => Promise<R>,
+  concurrency: number,
+): Promise<R[]> {
+  const results: R[] = [];
+
+  for (let i = 0; i < items.length; i += concurrency) {
+    const batch = items.slice(i, i + concurrency);
+    const batchResults = await Promise.all(batch.map(processor));
+    results.push(...batchResults);
+
+    // Add delay between batches to avoid rate limiting
+    if (i + concurrency < items.length) {
+      await new Promise((resolve) => setTimeout(resolve, BATCH_DELAY));
+    }
+  }
+
+  return results;
+}
+
+/**
  * Batch fetch Steam game metadata for multiple app IDs
  *
  * More efficient than calling getSteamGameMetadata in a loop as it:
  * - Skips cached entries
- * - Batches API requests (up to 100 appIds per request)
+ * - Processes requests concurrently (up to MAX_CONCURRENT_REQUESTS at once)
  * - Returns partial results even if some requests fail
  *
  * @param appIds - Array of Steam App IDs
@@ -303,95 +332,93 @@ export async function batchGetSteamGameMetadata(
     },
   );
 
-  // Split into batches of MAX_BATCH_SIZE
-  const batches: number[][] = [];
-  for (let i = 0; i < uncached.length; i += MAX_BATCH_SIZE) {
-    batches.push(uncached.slice(i, i + MAX_BATCH_SIZE));
-  }
+  // Fetch each app ID individually with concurrency control
+  // Note: Steam Store API doesn't reliably support batch requests
+  const fetchResults = await processConcurrentBatch(
+    uncached,
+    async (appId) => {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
 
-  // Fetch each batch
-  for (const batch of batches) {
-    try {
-      const appIdsParam = batch.join(',');
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
-
-      const response = await fetch(
-        `https://store.steampowered.com/api/appdetails?appids=${appIdsParam}`,
-        {
-          headers: {
-            'User-Agent': 'RuedigerBot/1.0 (Discord Game Deals Bot)',
+        const response = await fetch(
+          `https://store.steampowered.com/api/appdetails?appids=${appId}`,
+          {
+            headers: {
+              'User-Agent': 'RuedigerBot/1.0 (Discord Game Deals Bot)',
+            },
+            signal: controller.signal,
           },
-          signal: controller.signal,
-        },
-      );
+        );
 
-      clearTimeout(timeoutId);
+        clearTimeout(timeoutId);
 
-      if (!response.ok) {
-        logger.warn('Steam Store API batch error', {
-          batchSize: batch.length,
-          status: response.status,
-        });
-        continue;
-      }
+        if (!response.ok) {
+          logger.debug('Steam Store API error for app', {
+            appId,
+            status: response.status,
+          });
+          return { appId, metadata: null };
+        }
 
-      const json = await response.json();
+        const json = await response.json();
 
-      // Validate response
-      const parsed = SteamStoreResponseSchema.safeParse(json);
+        // Validate response
+        const parsed = SteamStoreResponseSchema.safeParse(json);
 
-      if (!parsed.success) {
-        logger.error('Steam Store API batch validation error', {
-          batchSize: batch.length,
-          error: parsed.error.message,
-          sampleAppIds: batch.slice(0, 3),
-          responseKeys:
-            json && typeof json === 'object'
-              ? Object.keys(json).slice(0, 5)
-              : [],
-        });
-        continue;
-      }
+        if (!parsed.success) {
+          logger.debug('Steam Store API validation error', {
+            appId,
+            error: parsed.error.message,
+          });
+          return { appId, metadata: null };
+        }
 
-      // Process each app in the batch
-      for (const appId of batch) {
+        // Extract app details
         const appDetails = parsed.data[appId.toString()];
 
-        if (appDetails) {
-          const metadata = transformAppDetails(appDetails);
-          setCachedMetadata(appId, metadata);
-          results.set(appId, metadata);
+        if (!appDetails) {
+          logger.debug('Steam Store API returned no data', { appId });
+          return { appId, metadata: null };
         }
-      }
 
-      const successCount = batch.filter((id) => results.has(id)).length;
-      logger.debug('Steam Store API batch fetched', {
-        batchSize: batch.length,
-        successCount,
-        failedCount: batch.length - successCount,
-      });
-    } catch (error) {
-      if ((error as Error).name === 'AbortError') {
-        logger.warn('Steam Store API batch timeout', {
-          batchSize: batch.length,
-        });
-      } else {
-        logger.error('Steam Store API batch fetch error', {
-          batchSize: batch.length,
-          error,
-        });
+        // Transform and cache
+        const metadata = transformAppDetails(appDetails);
+        setCachedMetadata(appId, metadata);
+
+        return { appId, metadata };
+      } catch (error) {
+        if ((error as Error).name === 'AbortError') {
+          logger.debug('Steam Store API timeout', { appId });
+        } else {
+          logger.debug('Steam Store API fetch error', {
+            appId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+        return { appId, metadata: null };
       }
+    },
+    MAX_CONCURRENT_REQUESTS,
+  );
+
+  // Collect successful results
+  for (const result of fetchResults) {
+    if (result.metadata) {
+      results.set(result.appId, result.metadata);
     }
   }
 
+  const successCount = results.size - (appIds.length - uncached.length);
   logger.info(
-    `Fetched ${results.size}/${appIds.length} Steam game metadata (${Math.round((results.size / appIds.length) * 100)}% success rate)`,
+    `Fetched ${successCount}/${uncached.length} Steam game metadata (${Math.round((successCount / uncached.length) * 100)}% success rate)`,
     {
       total: appIds.length,
-      fetched: results.size,
-      successRate: Math.round((results.size / appIds.length) * 100),
-      cacheHits: appIds.length - uncached.length,
+      cached: appIds.length - uncached.length,
+      requested: uncached.length,
+      fetched: successCount,
+      failed: uncached.length - successCount,
+      successRate: Math.round((successCount / uncached.length) * 100),
     },
   );
 
