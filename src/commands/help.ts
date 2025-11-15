@@ -112,7 +112,7 @@ export default {
     });
 
     embed.setFooter({
-      text: 'Game Deals Bot • Powered by IsThereAnyDeal.com, CheapShark & Steam',
+      text: 'Game Deals Bot • Powered by IsThereAnyDeal.com & Steam',
       iconURL: 'https://isthereanydeal.com/assets/favicon.png',
     });
 

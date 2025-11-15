@@ -206,3 +206,25 @@ export const steamProfiles = pgTable(
     index('steam_profiles_steam_id_idx').on(table.steamId),
   ],
 );
+
+/**
+ * ITAD-Steam Mappings - Maps ITAD game IDs to Steam App IDs
+ * Caches resolved mappings to minimize Steam API calls
+ * Never expires as game IDs are immutable
+ * Populated lazily as deals are processed
+ */
+export const itadSteamMappings = pgTable(
+  'itad_steam_mappings',
+  {
+    id: serial('id').primaryKey(),
+    itadGameId: varchar('itad_game_id', { length: 128 }).notNull().unique(),
+    steamAppId: integer('steam_app_id').notNull(),
+    gameTitle: text('game_title').notNull(),
+    resolvedAt: timestamp('resolved_at').notNull().defaultNow(),
+    resolvedBy: varchar('resolved_by', { length: 32 }).notNull(), // 'extraction' or 'search'
+  },
+  (table) => [
+    index('itad_steam_mappings_steam_app_id_idx').on(table.steamAppId),
+    index('itad_steam_mappings_game_title_idx').on(table.gameTitle),
+  ],
+);

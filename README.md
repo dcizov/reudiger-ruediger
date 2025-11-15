@@ -1,7 +1,8 @@
 # Rüdiger Discord Bot
 
-Game deal aggregator and price tracker for Discord. Posts deals from CheapShark,
-tracks prices via IsThereAnyDeal API, manages roles, and aggregates gaming news.
+Game deal aggregator and price tracker for Discord. Posts deals from
+IsThereAnyDeal, enriched with Steam metadata (Metacritic scores, reviews,
+images), manages roles, and aggregates gaming news.
 
 **Stack**: TypeScript • Discord.js v14 • Drizzle ORM • PostgreSQL • Docker
 
@@ -274,7 +275,7 @@ src/
 ├── commands/           # Discord slash commands
 ├── events/            # Discord event handlers
 ├── services/          # Core services (deals, news, scheduling)
-├── utils/             # Utilities (ITAD, CheapShark APIs)
+├── utils/             # Utilities (ITAD, Steam APIs)
 ├── db/
 │   ├── schema.ts      # Database schema (Drizzle ORM)
 │   └── index.ts       # Database connection
@@ -289,8 +290,8 @@ drizzle/               # Generated SQL migrations
 
 ## Key Features
 
-- **Deal Posting**: Fetches deals from CheapShark, enriches with ITAD prices,
-  scores and posts top deals
+- **Deal Posting**: Fetches deals from ITAD, enriches with Steam metadata
+  (Metacritic, reviews, genres, developers), scores and posts top deals
 - **Price Alerts**: Users subscribe to games, receive DMs when target prices met
 - **Role Management**: Reaction roles with categories, cooldowns, and
   conditional access

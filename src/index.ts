@@ -42,8 +42,6 @@ for (const event of events) {
 
 client.once(Events.ClientReady, (readyClient) => {
   logger.info(`✅ Ready! Logged in as ${readyClient.user.tag}`);
-
-  // Load Steam app list in background (don't block bot startup)
   void getSteamAppList()
     .then((apps) => {
       logger.info(`✅ Pre-loaded ${apps.length} Steam apps for autocomplete`);
