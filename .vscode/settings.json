@@ -1,45 +1,38 @@
 {
-  // Default formatter and basic formatting settings
   "editor.defaultFormatter": "esbenp.prettier-vscode",
   "editor.formatOnSave": true,
   "editor.formatOnPaste": true,
-
-  // Auto-fix on save
   "editor.codeActionsOnSave": {
     "source.fixAll.eslint": "explicit",
     "source.organizeImports": "explicit"
   },
-
-  // ESLint settings
+  "eslint.format.enable": false,
+  "eslint.useFlatConfig": true,
   "eslint.validate": ["typescript"],
-  "eslint.format.enable": true,
-  "eslint.useESLintClass": true,
   "eslint.workingDirectories": [{ "mode": "location" }],
-
-  // Prettier settings
   "prettier.requireConfig": true,
   "prettier.useEditorConfig": false,
-
-  // TypeScript settings
-  "typescript.enablePromptUseWorkspaceTsdk": true,
-  "typescript.preferences.importModuleSpecifier": "non-relative",
-
-  // File specific settings
+  "js/ts.tsdk.path": "node_modules/typescript/lib",
+  "js/ts.tsdk.promptToUseWorkspaceVersion": true,
+  "js/ts.preferences.importModuleSpecifier": "non-relative",
   "[typescript]": {
-    "editor.formatOnSave": true,
-    "editor.formatOnPaste": true,
     "editor.defaultFormatter": "esbenp.prettier-vscode"
   },
-
-  // Optional: Hide certain files from the editor
+  "[json]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[jsonc]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "files.eol": "\n",
+  "files.insertFinalNewline": true,
+  "files.trimFinalNewlines": true,
+  "files.trimTrailingWhitespace": true,
   "files.exclude": {
     "**/.git": true,
     "**/.DS_Store": true,
-    "node_modules": true,
-    "dist": true
-  },
-  "[dotenv]": {
-    "editor.defaultFormatter": "foxundermoon.shell-format"
-  },
-  "typescript.tsdk": "node_modules/typescript/lib"
+    "**/node_modules": true,
+    "**/dist": true,
+    "**/coverage": true
+  }
 }

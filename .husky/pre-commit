@@ -1,1 +1,1 @@
-npm run pre-commit
+npm exec --no -- lint-staged
