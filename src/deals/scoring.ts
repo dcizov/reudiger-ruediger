@@ -125,7 +125,12 @@ export function getHardFilterRejections(
       reasons.push("steam-app-is-not-a-game");
     }
     if (steam.isFree === true) reasons.push("steam-game-is-free");
-    if (steam.comingSoon) reasons.push("steam-game-not-yet-released");
+    else if (steam.isFree === null)
+      reasons.push("steam-free-status-unavailable");
+    if (steam.comingSoon === true) reasons.push("steam-game-not-yet-released");
+    else if (steam.comingSoon === null) {
+      reasons.push("steam-release-status-unavailable");
+    }
     if (!getQualityEvidence(facts, criteria)) {
       reasons.push("insufficient-quality-evidence");
     }

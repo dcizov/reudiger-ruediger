@@ -90,6 +90,20 @@ describe("deal relevance gates", () => {
         FIXED_NOW
       )
     ).toContain("steam-game-not-yet-released");
+    expect(
+      getHardFilterRejections(
+        facts(makeItadDeal(), makeSteamMetadata({ isFree: null })),
+        TEST_CRITERIA,
+        FIXED_NOW
+      )
+    ).toContain("steam-free-status-unavailable");
+    expect(
+      getHardFilterRejections(
+        facts(makeItadDeal(), makeSteamMetadata({ comingSoon: null })),
+        TEST_CRITERIA,
+        FIXED_NOW
+      )
+    ).toContain("steam-release-status-unavailable");
 
     const insufficient = facts(
       makeItadDeal(),

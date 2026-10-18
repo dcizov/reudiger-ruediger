@@ -59,6 +59,31 @@ describe("Steam Store appdetails boundary", () => {
     expect(url.searchParams.get("cc")).toBe("de");
   });
 
+  it("keeps absent Steam free/release flags unknown for the relevance gate", async () => {
+    const payload: unknown = {
+      "12345": {
+        success: true,
+        data: {
+          type: "game",
+          name: "Incomplete Steam Game",
+          steam_appid: 12345,
+          recommendations: { total: 5_000 },
+          metacritic: { score: 85 },
+        },
+      },
+    };
+    const fetcher = vi.fn(
+      (_input: string | URL | Request, _init?: RequestInit) =>
+        Promise.resolve(new Response(JSON.stringify(payload), { status: 200 }))
+    );
+    const client = new SteamStoreApiClient({ fetcher, requestIntervalMs: 0 });
+
+    const metadata = await client.getGameMetadata(12345, { country: "DE" });
+
+    expect(metadata?.isFree).toBeNull();
+    expect(metadata?.comingSoon).toBeNull();
+  });
+
   it("returns null for non-game appdetails envelopes and invalid app IDs", async () => {
     const fetcher = vi.fn(
       (_input: string | URL | Request, _init?: RequestInit) =>

@@ -136,7 +136,7 @@ export class SteamStoreApiClient {
         name: data.name ?? null,
         type: data.type?.toLowerCase() ?? null,
         isFree: data.is_free ?? null,
-        comingSoon: data.release_date?.coming_soon ?? false,
+        comingSoon: data.release_date?.coming_soon ?? null,
         totalReviews: data.recommendations?.total ?? null,
         metacriticScore: data.metacritic?.score ?? null,
         headerImage: data.header_image ?? null,

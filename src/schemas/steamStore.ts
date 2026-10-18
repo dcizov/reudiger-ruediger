@@ -54,7 +54,7 @@ export interface SteamGameMetadata {
   name: string | null;
   type: string | null;
   isFree: boolean | null;
-  comingSoon: boolean;
+  comingSoon: boolean | null;
   totalReviews: number | null;
   metacriticScore: number | null;
   headerImage: string | null;
