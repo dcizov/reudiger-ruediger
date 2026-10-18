@@ -1,45 +1,50 @@
 {
-  // Default formatter and basic formatting settings
   "editor.defaultFormatter": "esbenp.prettier-vscode",
   "editor.formatOnSave": true,
   "editor.formatOnPaste": true,
-
-  // Auto-fix on save
+  "editor.trimAutoWhitespace": true,
+  "editor.guides.bracketPairs": true,
+  "editor.guides.indentation": true,
+  "editor.bracketPairColorization.enabled": true,
+  "editor.linkedEditing": true,
   "editor.codeActionsOnSave": {
     "source.fixAll.eslint": "explicit",
     "source.organizeImports": "explicit"
   },
-
-  // ESLint settings
-  "eslint.validate": ["typescript"],
-  "eslint.format.enable": true,
-  "eslint.useESLintClass": true,
-  "eslint.workingDirectories": [{ "mode": "location" }],
-
-  // Prettier settings
-  "prettier.requireConfig": true,
-  "prettier.useEditorConfig": false,
-
-  // TypeScript settings
-  "typescript.enablePromptUseWorkspaceTsdk": true,
-  "typescript.preferences.importModuleSpecifier": "non-relative",
-
-  // File specific settings
-  "[typescript]": {
-    "editor.formatOnSave": true,
-    "editor.formatOnPaste": true,
-    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  "files.eol": "\n",
+  "files.insertFinalNewline": true,
+  "files.trimFinalNewlines": true,
+  "files.trimTrailingWhitespace": true,
+  "files.associations": {
+    ".env*": "dotenv"
   },
-
-  // Optional: Hide certain files from the editor
   "files.exclude": {
     "**/.git": true,
     "**/.DS_Store": true,
-    "node_modules": true,
-    "dist": true
+    "**/node_modules": true,
+    "**/dist": true,
+    "**/coverage": true
   },
-  "[dotenv]": {
-    "editor.defaultFormatter": "foxundermoon.shell-format"
+  "eslint.useFlatConfig": true,
+  "eslint.format.enable": false,
+  "eslint.validate": ["typescript"],
+  "eslint.workingDirectories": [
+    {
+      "mode": "auto"
+    }
+  ],
+  "prettier.requireConfig": true,
+  "prettier.useEditorConfig": false,
+  "js/ts.tsdk.path": "node_modules/typescript/lib",
+  "js/ts.tsdk.promptToUseWorkspaceVersion": true,
+  "js/ts.preferences.importModuleSpecifier": "non-relative",
+  "[typescript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
   },
-  "typescript.tsdk": "node_modules/typescript/lib"
+  "[json]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[jsonc]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  }
 }
