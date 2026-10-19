@@ -1,18 +1,38 @@
 import type { InteractionReplyOptions, MessagePayload } from "discord.js";
-import { Client, Events, GatewayIntentBits } from "discord.js";
+import {
+  Client,
+  Events,
+  GatewayCloseCodes,
+  GatewayIntentBits,
+  MessageFlags,
+  Partials,
+} from "discord.js";
 import { commands } from "./commands";
-import { config } from "./config";
+import { parseEnv } from "./config";
+import { closeDb } from "./db";
+
+const config = parseEnv();
 
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.DirectMessages,
-  ],
+  intents: [GatewayIntentBits.Guilds],
+  partials: [Partials.Channel],
 });
 
 client.once(Events.ClientReady, (readyClient) => {
   console.log(`✅ Discord bot is ready! Logged in as ${readyClient.user.tag}`);
+});
+
+const DISALLOWED_INTENTS: number = GatewayCloseCodes.DisallowedIntents;
+
+client.on(Events.ShardDisconnect, (closeEvent, shardId) => {
+  if (closeEvent.code !== DISALLOWED_INTENTS) return;
+
+  console.error(
+    `❌ Shard ${shardId} disconnected: disallowed intents (4014).\n` +
+      "   A privileged intent is requested but not enabled. Turn it on in\n" +
+      "   Developer Portal → your application → Bot → Privileged Gateway Intents."
+  );
+  process.exit(1);
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
@@ -35,9 +55,23 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     await replyMethod({
       content: "There was an error executing this command!",
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
+});
+
+async function shutdown(signal: NodeJS.Signals): Promise<void> {
+  console.log(`👋 Received ${signal}, logging out...`);
+  await client.destroy();
+  await closeDb();
+  process.exit(0);
+}
+
+process.once("SIGINT", () => void shutdown("SIGINT"));
+process.once("SIGTERM", () => void shutdown("SIGTERM"));
+
+process.on("unhandledRejection", (error) => {
+  console.error("Unhandled promise rejection:", error);
 });
 
 client.login(config.DISCORD_TOKEN).catch((error) => {
